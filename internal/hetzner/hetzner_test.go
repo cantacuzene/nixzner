@@ -18,7 +18,8 @@ import (
 
 type fakeAPI struct {
 	mu              sync.Mutex
-	serverTypes     map[string]string // name -> architecture
+	serverTypes     map[string]string          // name -> architecture
+	stock           map[string]map[string]bool // server type -> location -> available
 	locations       map[string]bool
 	images          map[string]bool // "name/arch"
 	sshKeys         map[string]bool
@@ -44,6 +45,7 @@ func newFakeAPI(t *testing.T) (*Client, *fakeAPI) {
 	t.Helper()
 	f := &fakeAPI{
 		serverTypes:     map[string]string{"cx32": "x86", "cax11": "arm"},
+		stock:           map[string]map[string]bool{"cx32": {"fsn1": true}, "cax11": {"fsn1": true}},
 		locations:       set("fsn1"),
 		images:          set("debian-12/x86", "debian-12/arm"),
 		sshKeys:         set("admin"),
@@ -95,7 +97,11 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 	case get && r.URL.Path == "/server_types":
 		var items []any
 		if arch, ok := f.serverTypes[name]; ok {
-			items = []any{map[string]any{"id": 1, "name": name, "architecture": arch}}
+			var locs []any
+			for loc, available := range f.stock[name] {
+				locs = append(locs, map[string]any{"id": 2, "name": loc, "available": available})
+			}
+			items = []any{map[string]any{"id": 1, "name": name, "architecture": arch, "locations": locs}}
 		}
 		writeJSON(w, 200, map[string]any{"server_types": items})
 	case get && r.URL.Path == "/locations":
@@ -190,6 +196,44 @@ func TestPreflightLooksUpImageForServerTypeArchitecture(t *testing.T) {
 	}
 	if !slices.Contains(f.imageQueries, "debian-12/arm") {
 		t.Fatalf("image queries = %v, want debian-12/arm", f.imageQueries)
+	}
+}
+
+func TestPreflightRejectsOutOfStockServerType(t *testing.T) {
+	c, f := newFakeAPI(t)
+	f.stock["cx32"] = map[string]bool{"fsn1": false, "nbg1": true, "hel1": true, "ash": false}
+	err := c.Preflight(context.Background(), validRequest())
+	want := `server type "cx32" is out of stock in fsn1 (in stock in: hel1, nbg1)`
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("error = %v, want it to mention %q", err, want)
+	}
+}
+
+func TestPreflightRejectsServerTypeOutOfStockEverywhere(t *testing.T) {
+	c, f := newFakeAPI(t)
+	f.stock["cx32"] = map[string]bool{"fsn1": false, "nbg1": false}
+	err := c.Preflight(context.Background(), validRequest())
+	want := `server type "cx32" is out of stock in fsn1 (not in stock in any location)`
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("error = %v, want it to mention %q", err, want)
+	}
+}
+
+func TestPreflightRejectsServerTypeNotOfferedInLocation(t *testing.T) {
+	c, f := newFakeAPI(t)
+	f.stock["cx32"] = map[string]bool{"nbg1": true}
+	err := c.Preflight(context.Background(), validRequest())
+	want := `server type "cx32" is not offered in fsn1 (in stock in: nbg1)`
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("error = %v, want it to mention %q", err, want)
+	}
+}
+
+func TestPreflightSkipsStockCheckWithoutLocationData(t *testing.T) {
+	c, f := newFakeAPI(t)
+	delete(f.stock, "cx32")
+	if err := c.Preflight(context.Background(), validRequest()); err != nil {
+		t.Fatal(err)
 	}
 }
 

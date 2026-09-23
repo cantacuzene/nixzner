@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 )
@@ -92,9 +93,13 @@ func (c *Client) resolve(ctx context.Context, r CreateRequest) (*resolved, error
 	return res, errors.Join(errs...)
 }
 
-// Preflight checks that every referenced resource exists and the name is free.
+// Preflight checks that every referenced resource exists, the server type
+// is in stock in the location, and the name is free.
 func (c *Client) Preflight(ctx context.Context, r CreateRequest) error {
-	_, err := c.resolve(ctx, r)
+	res, err := c.resolve(ctx, r)
+	if res.serverType != nil && res.location != nil {
+		err = errors.Join(err, checkStock(res.serverType, res.location.Name))
+	}
 	existing, _, lookupErr := c.hc.Server.GetByName(ctx, r.Name)
 	switch {
 	case lookupErr != nil:
@@ -103,6 +108,40 @@ func (c *Client) Preflight(ctx context.Context, r CreateRequest) error {
 		err = errors.Join(err, fmt.Errorf("server %q already exists (id %d)", r.Name, existing.ID))
 	}
 	return err
+}
+
+// checkStock reports when the server type cannot be ordered in location,
+// naming the locations where it can. A server type without per-location
+// data is assumed orderable.
+func checkStock(st *hcloud.ServerType, location string) error {
+	if len(st.Locations) == 0 {
+		return nil
+	}
+	offered, inStock := false, []string{}
+	for _, l := range st.Locations {
+		if l.Location == nil {
+			continue
+		}
+		if l.Location.Name == location {
+			if l.Available {
+				return nil
+			}
+			offered = true
+		}
+		if l.Available {
+			inStock = append(inStock, l.Location.Name)
+		}
+	}
+	problem := "is not offered in"
+	if offered {
+		problem = "is out of stock in"
+	}
+	alternatives := "not in stock in any location"
+	if len(inStock) > 0 {
+		slices.Sort(inStock)
+		alternatives = "in stock in: " + strings.Join(inStock, ", ")
+	}
+	return fmt.Errorf("server type %q %s %s (%s)", st.Name, problem, location, alternatives)
 }
 
 // CreateServer creates and starts the server. Whenever the server exists

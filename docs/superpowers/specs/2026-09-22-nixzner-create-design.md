@@ -101,7 +101,7 @@ trust-on-first-use trade-off, limited to a server created seconds earlier by thi
 
 | # | Step | Run | Cleanup |
 |---|---|---|---|
-| 1 | Preflight | validate options; `HCLOUD_TOKEN` set; `nixos-anywhere` and `nix` on PATH; server type, location, image, SSH key, firewalls, networks exist; name unused; `nix eval` drvPath + outPath | — |
+| 1 | Preflight | validate options; `HCLOUD_TOKEN` set; `nixos-anywhere` and `nix` on PATH; server type, location, image, SSH key, firewalls, networks exist; server type in stock in the location (error names where it is in stock); name unused; `nix eval` drvPath + outPath | — |
 | 2 | Create server | create with bootstrap image, SSH key, firewalls, networks, labels (`nixzner-status=installing`); wait for action | `DeleteServer(id)` |
 | 3 | Wait for SSH | TCP 22 reachable, then root SSH auth succeeds; exponential backoff, 5 min cap | — |
 | 4 | Install | `nixos-anywhere --flake <flake> --build-on remote --target-host root@<ipv4> [-i <identity>] --ssh-option StrictHostKeyChecking=no --ssh-option UserKnownHostsFile=/dev/null`; output tee'd to stderr and a temp log file | — |
