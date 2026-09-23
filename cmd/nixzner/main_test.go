@@ -89,3 +89,11 @@ func TestCreateInteractiveChecksTokenBeforePrompting(t *testing.T) {
 		t.Errorf("asked %v before checking the token", p.asked)
 	}
 }
+
+func TestCreateRejectsMissingFlakeDirectory(t *testing.T) {
+	args := append(append([]string{}, fullArgs...), "--flake", "path:/nonexistent/nixzner-flake#web1")
+	code, _, stderr := runCLI(map[string]string{"HCLOUD_TOKEN": "x"}, args...)
+	if code != 1 || !strings.Contains(stderr, `flake path "/nonexistent/nixzner-flake"`) {
+		t.Fatalf("code=%d stderr=%q", code, stderr)
+	}
+}

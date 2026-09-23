@@ -116,6 +116,9 @@ func newCreateCmd(stdout, stderr io.Writer, getenv func(string) string, created 
 			if opts.Flake, err = config.ParseFlake(a.Flake); err != nil {
 				return err
 			}
+			if opts.Flake, err = config.ResolveLocalFlake(opts.Flake); err != nil {
+				return err
+			}
 			if opts.Labels, err = config.ParseLabels(labels); err != nil {
 				return err
 			}

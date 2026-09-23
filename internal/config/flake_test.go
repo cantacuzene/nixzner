@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestParseFlake(t *testing.T) {
 	cases := []struct {
@@ -50,5 +54,73 @@ func TestToplevelAttr(t *testing.T) {
 		if got := f.ToplevelAttr(); got != want {
 			t.Errorf("ToplevelAttr(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// symlinkedDir returns a symlink and the real directory it points at. On
+// macOS the temp dir itself sits behind the /var -> /private/var symlink.
+func symlinkedDir(t *testing.T) (link, real string) {
+	t.Helper()
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	real = filepath.Join(base, "real")
+	link = filepath.Join(base, "link")
+	if err := os.Mkdir(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	return link, real
+}
+
+func TestResolveLocalFlake(t *testing.T) {
+	link, real := symlinkedDir(t)
+	cases := []struct{ in, want string }{
+		{in: "path:" + link, want: "path:" + real},
+		{in: "path:" + link + "?dir=sub", want: "path:" + real + "?dir=sub"},
+		{in: link, want: real},
+		{in: "github:org/infra", want: "github:org/infra"},
+		{in: "nixpkgs", want: "nixpkgs"},
+		{in: "git+file:" + link, want: "git+file:" + link},
+	}
+	for _, c := range cases {
+		got, err := ResolveLocalFlake(FlakeRef{URI: c.in, Host: "web1"})
+		if err != nil {
+			t.Errorf("ResolveLocalFlake(%q): %v", c.in, err)
+			continue
+		}
+		if want := (FlakeRef{URI: c.want, Host: "web1"}); got != want {
+			t.Errorf("ResolveLocalFlake(%q) = %+v, want %+v", c.in, got, want)
+		}
+	}
+}
+
+func TestResolveLocalFlakeRelative(t *testing.T) {
+	link, real := symlinkedDir(t)
+	t.Chdir(filepath.Dir(link))
+	got, err := ResolveLocalFlake(FlakeRef{URI: "./link", Host: "web1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.URI != real {
+		t.Errorf("URI = %q, want %q", got.URI, real)
+	}
+	t.Chdir(link)
+	got, err = ResolveLocalFlake(FlakeRef{URI: ".", Host: "web1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.URI != real {
+		t.Errorf(". resolved to %q, want %q", got.URI, real)
+	}
+}
+
+func TestResolveLocalFlakeMissingPath(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "nope")
+	if _, err := ResolveLocalFlake(FlakeRef{URI: "path:" + missing, Host: "web1"}); err == nil {
+		t.Fatal("want error for a missing flake directory")
 	}
 }
