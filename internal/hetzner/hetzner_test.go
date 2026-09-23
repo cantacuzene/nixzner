@@ -20,6 +20,8 @@ type fakeAPI struct {
 	mu              sync.Mutex
 	serverTypes     map[string]string          // name -> architecture
 	stock           map[string]map[string]bool // server type -> location -> available
+	prices          map[string]string          // server type -> gross hourly price in every location
+	deprecated      map[string]string          // server type -> location where it is deprecated
 	locations       map[string]bool
 	images          map[string]bool // "name/arch"
 	sshKeys         map[string]bool
@@ -46,6 +48,8 @@ func newFakeAPI(t *testing.T) (*Client, *fakeAPI) {
 	f := &fakeAPI{
 		serverTypes:     map[string]string{"cx32": "x86", "cax11": "arm"},
 		stock:           map[string]map[string]bool{"cx32": {"fsn1": true}, "cax11": {"fsn1": true}},
+		prices:          map[string]string{"cx32": "0.0136", "cax11": "0.0096"},
+		deprecated:      map[string]string{},
 		locations:       set("fsn1"),
 		images:          set("debian-12/x86", "debian-12/arm"),
 		sshKeys:         set("admin"),
@@ -96,16 +100,31 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case get && r.URL.Path == "/server_types":
 		var items []any
-		if arch, ok := f.serverTypes[name]; ok {
-			var locs []any
-			for loc, available := range f.stock[name] {
-				locs = append(locs, map[string]any{"id": 2, "name": loc, "available": available})
+		for _, st := range slices.Sorted(maps.Keys(f.serverTypes)) {
+			if name != "" && st != name {
+				continue
 			}
-			items = []any{map[string]any{"id": 1, "name": name, "architecture": arch, "locations": locs}}
+			var locs, prices []any
+			for loc, available := range f.stock[st] {
+				l := map[string]any{"id": 2, "name": loc, "available": available}
+				if f.deprecated[st] == loc {
+					l["deprecation"] = map[string]any{"announced": "2026-01-01T00:00:00Z", "unavailable_after": "2026-12-01T00:00:00Z"}
+				}
+				locs = append(locs, l)
+				prices = append(prices, map[string]any{"location": loc, "price_hourly": map[string]any{"net": "0", "gross": f.prices[st]}})
+			}
+			items = append(items, map[string]any{"id": 1, "name": st, "architecture": f.serverTypes[st],
+				"cores": 2, "memory": 4.0, "locations": locs, "prices": prices})
 		}
 		writeJSON(w, 200, map[string]any{"server_types": items})
 	case get && r.URL.Path == "/locations":
-		writeJSON(w, 200, map[string]any{"locations": named(f.locations[name], 2, name)})
+		var items []any
+		for _, loc := range slices.Sorted(maps.Keys(f.locations)) {
+			if name == "" || loc == name {
+				items = append(items, map[string]any{"id": 2, "name": loc, "city": "City of " + loc, "country": "DE"})
+			}
+		}
+		writeJSON(w, 200, map[string]any{"locations": items})
 	case get && r.URL.Path == "/images":
 		key := name + "/" + q.Get("architecture")
 		f.imageQueries = append(f.imageQueries, key)
@@ -115,7 +134,13 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 200, map[string]any{"images": items})
 	case get && r.URL.Path == "/ssh_keys":
-		writeJSON(w, 200, map[string]any{"ssh_keys": named(f.sshKeys[name], 5, name)})
+		var items []any
+		for _, key := range slices.Sorted(maps.Keys(f.sshKeys)) {
+			if name == "" || key == name {
+				items = append(items, map[string]any{"id": 5, "name": key})
+			}
+		}
+		writeJSON(w, 200, map[string]any{"ssh_keys": items})
 	case get && r.URL.Path == "/firewalls":
 		writeJSON(w, 200, map[string]any{"firewalls": named(f.firewalls[name], 7, name)})
 	case get && r.URL.Path == "/networks":
@@ -302,5 +327,60 @@ func TestSetLabels(t *testing.T) {
 	got := f.updateBody["labels"].(map[string]any)
 	if got["nixzner-status"] != "ready" {
 		t.Fatalf("update body = %v", f.updateBody)
+	}
+}
+
+func TestLocations(t *testing.T) {
+	c, f := newFakeAPI(t)
+	f.locations = set("nbg1", "fsn1")
+	got, err := c.Locations(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Location{{Name: "fsn1", City: "City of fsn1", Country: "DE"}, {Name: "nbg1", City: "City of nbg1", Country: "DE"}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestServerTypesInStockCheapestFirst(t *testing.T) {
+	c, f := newFakeAPI(t)
+	f.serverTypes["cpx22"] = "x86"
+	f.stock["cpx22"] = map[string]bool{"fsn1": false, "nbg1": true}
+	f.prices["cpx22"] = "0.0312"
+	got, err := c.ServerTypesInStock(context.Background(), "fsn1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []ServerTypeOffer{
+		{Name: "cax11", Architecture: "arm", Cores: 2, MemoryGB: 4, HourlyGross: 0.0096},
+		{Name: "cx32", Architecture: "x86", Cores: 2, MemoryGB: 4, HourlyGross: 0.0136},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestServerTypesInStockSkipsDeprecated(t *testing.T) {
+	c, f := newFakeAPI(t)
+	f.deprecated["cx32"] = "fsn1"
+	got, err := c.ServerTypesInStock(context.Background(), "fsn1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Name != "cax11" {
+		t.Fatalf("got %v, want only cax11", got)
+	}
+}
+
+func TestSSHKeyNames(t *testing.T) {
+	c, f := newFakeAPI(t)
+	f.sshKeys = set("zed", "admin")
+	got, err := c.SSHKeyNames(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"admin", "zed"}; !slices.Equal(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
 	}
 }

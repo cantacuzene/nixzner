@@ -42,6 +42,17 @@ nixzner create web1 \
   --label env=prod
 ```
 
+Or run `nixzner create` on its own in a terminal: it asks for the name,
+then a location, a server type in stock there (cheapest first), one of the
+project's SSH keys, and the flake (default `.#<name>`), shows a summary and
+asks before creating anything. Flags you pass are not asked for, so
+`nixzner create web1 --flake .#web1` only asks where, what size, and which key.
+Outside a terminal (scripts, CI) missing values are errors instead.
+
+Before anything is created, nixzner checks that every named resource exists
+and that the server type is in stock in the location; if it is not, the error
+names the locations where it is.
+
 On success, stdout gets one line: `<name> <ipv4> <ipv6> <store-path>`.
 Progress goes to stderr.
 

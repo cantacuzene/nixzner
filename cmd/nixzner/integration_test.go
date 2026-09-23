@@ -62,7 +62,7 @@ func TestCreateIntegration(t *testing.T) {
 		"--location", location,
 		"--ssh-key", sshKey,
 		"--log-dir", t.TempDir(),
-	}, &stdout, os.Stderr, os.Getenv, &created)
+	}, &stdout, os.Stderr, os.Getenv, &created, nil)
 	if code != 0 {
 		t.Fatalf("exit code %d", code)
 	}

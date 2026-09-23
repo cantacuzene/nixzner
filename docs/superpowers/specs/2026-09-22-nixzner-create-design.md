@@ -31,7 +31,7 @@ v1 ships a single command: `create`.
 ## CLI
 
 ```
-nixzner create <name> \
+nixzner create [name] \
   --flake .#web1                 # required
   --type cx32                    # required, Hetzner server type
   --location fsn1                # required
@@ -45,6 +45,12 @@ nixzner create <name> \
   --timeout 30m                  # overall deadline, default 30m
 ```
 
+- Interactive mode: when stdin and stderr are terminals, a missing name, `--location`,
+  `--type`, `--ssh-key` or `--flake` is asked for (in that order; types offered are
+  those in stock in the chosen location, cheapest first; flake defaults to `.#<name>`),
+  followed by a summary and a Create/Cancel confirmation. Prompts draw on stderr so
+  stdout stays machine-readable. Cancelling exits `1` with nothing created. Without a
+  terminal, missing values are errors as before.
 - Hetzner token is read from `HCLOUD_TOKEN`; missing token is a preflight error.
 - Architecture is derived from the server type: `cax*` → arm64, otherwise x86. The
   bootstrap image is resolved for that architecture. The flake must set a matching

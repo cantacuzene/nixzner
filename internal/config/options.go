@@ -25,11 +25,19 @@ type CreateOptions struct {
 
 var serverNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
+// ValidateServerName checks that name is usable as a server's hostname.
+func ValidateServerName(name string) error {
+	if !serverNameRe.MatchString(name) {
+		return fmt.Errorf("server name %q must be a lowercase hostname label (a-z, 0-9, -; at most 63 chars)", name)
+	}
+	return nil
+}
+
 // Validate checks the options without any I/O and reports every problem.
 func (o CreateOptions) Validate() error {
 	var errs []error
-	if !serverNameRe.MatchString(o.Name) {
-		errs = append(errs, fmt.Errorf("server name %q must be a lowercase hostname label (a-z, 0-9, -; at most 63 chars)", o.Name))
+	if err := ValidateServerName(o.Name); err != nil {
+		errs = append(errs, err)
 	}
 	if o.Flake.Host == "" {
 		errs = append(errs, errors.New("--flake is required"))

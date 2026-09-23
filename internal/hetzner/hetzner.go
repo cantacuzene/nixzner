@@ -2,10 +2,12 @@
 package hetzner
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
@@ -108,6 +110,77 @@ func (c *Client) Preflight(ctx context.Context, r CreateRequest) error {
 		err = errors.Join(err, fmt.Errorf("server %q already exists (id %d)", r.Name, existing.ID))
 	}
 	return err
+}
+
+type Location struct {
+	Name    string
+	City    string
+	Country string
+}
+
+// Locations lists every Hetzner location, sorted by name.
+func (c *Client) Locations(ctx context.Context) ([]Location, error) {
+	all, err := c.hc.Location.All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing locations: %w", err)
+	}
+	out := make([]Location, 0, len(all))
+	for _, l := range all {
+		out = append(out, Location{Name: l.Name, City: l.City, Country: l.Country})
+	}
+	slices.SortFunc(out, func(a, b Location) int { return strings.Compare(a.Name, b.Name) })
+	return out, nil
+}
+
+type ServerTypeOffer struct {
+	Name         string
+	Architecture string
+	Cores        int
+	MemoryGB     float32
+	HourlyGross  float64 // EUR, in the queried location
+}
+
+// ServerTypesInStock lists the server types that can be ordered in location
+// right now, cheapest first. Types deprecated there are left out.
+func (c *Client) ServerTypesInStock(ctx context.Context, location string) ([]ServerTypeOffer, error) {
+	all, err := c.hc.ServerType.All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing server types: %w", err)
+	}
+	var out []ServerTypeOffer
+	for _, st := range all {
+		i := slices.IndexFunc(st.Locations, func(l hcloud.ServerTypeLocation) bool {
+			return l.Location != nil && l.Location.Name == location
+		})
+		if i < 0 || !st.Locations[i].Available || st.Locations[i].IsDeprecated() {
+			continue
+		}
+		offer := ServerTypeOffer{Name: st.Name, Architecture: string(st.Architecture), Cores: st.Cores, MemoryGB: st.Memory}
+		for _, p := range st.Pricings {
+			if p.Location != nil && p.Location.Name == location {
+				offer.HourlyGross, _ = strconv.ParseFloat(p.Hourly.Gross, 64)
+			}
+		}
+		out = append(out, offer)
+	}
+	slices.SortFunc(out, func(a, b ServerTypeOffer) int {
+		return cmp.Or(cmp.Compare(a.HourlyGross, b.HourlyGross), strings.Compare(a.Name, b.Name))
+	})
+	return out, nil
+}
+
+// SSHKeyNames lists the names of the project's SSH keys, sorted.
+func (c *Client) SSHKeyNames(ctx context.Context) ([]string, error) {
+	all, err := c.hc.SSHKey.All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing ssh keys: %w", err)
+	}
+	out := make([]string, 0, len(all))
+	for _, k := range all {
+		out = append(out, k.Name)
+	}
+	slices.Sort(out)
+	return out, nil
 }
 
 // checkStock reports when the server type cannot be ordered in location,

@@ -9,11 +9,14 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"nixzner/internal/config"
 	"nixzner/internal/create"
@@ -28,7 +31,11 @@ func main() {
 	sigs := make(chan os.Signal, 3)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 	go handleSignals(sigs, cancel, &created)
-	os.Exit(run(ctx, os.Args[1:], os.Stdout, os.Stderr, os.Getenv, &created))
+	var p prompter
+	if term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stderr.Fd())) {
+		p = huhPrompter{out: os.Stderr}
+	}
+	os.Exit(run(ctx, os.Args[1:], os.Stdout, os.Stderr, os.Getenv, &created, p))
 }
 
 // handleSignals cancels on the first signal (triggering cleanup), ignores
@@ -52,13 +59,15 @@ func handleSignals(sigs <-chan os.Signal, cancel context.CancelFunc, created *at
 	}
 }
 
-func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv func(string) string, created *atomic.Pointer[hetzner.Server]) int {
+// run executes the CLI. A nil prompter means there is no terminal to ask
+// for missing values on, so they are errors instead.
+func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv func(string) string, created *atomic.Pointer[hetzner.Server], p prompter) int {
 	root := &cobra.Command{
 		Use:          "nixzner",
 		Short:        "Install NixOS on Hetzner Cloud servers",
 		SilenceUsage: true,
 	}
-	root.AddCommand(newCreateCmd(stdout, stderr, getenv, created))
+	root.AddCommand(newCreateCmd(stdout, stderr, getenv, created, p))
 	root.SetArgs(args)
 	root.SetOut(stdout)
 	root.SetErr(stderr)
@@ -73,26 +82,43 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	}
 }
 
-func newCreateCmd(stdout, stderr io.Writer, getenv func(string) string, created *atomic.Pointer[hetzner.Server]) *cobra.Command {
+func newCreateCmd(stdout, stderr io.Writer, getenv func(string) string, created *atomic.Pointer[hetzner.Server], p prompter) *cobra.Command {
 	var (
 		opts   config.CreateOptions
 		flake  string
 		labels []string
 	)
 	cmd := &cobra.Command{
-		Use:   "create <name>",
+		Use:   "create [name]",
 		Short: "Create a Hetzner Cloud server and install NixOS on it from a flake",
-		Args:  cobra.ExactArgs(1),
+		Long: "Create a Hetzner Cloud server and install NixOS on it from a flake.\n\n" +
+			"On a terminal, the name, --location, --type, --ssh-key and --flake are asked for when missing.",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts.Name = args[0]
+			a := answers{Location: opts.Location, ServerType: opts.ServerType, SSHKey: opts.SSHKey, Flake: flake}
+			if len(args) == 1 {
+				a.Name = args[0]
+			}
+			token := getenv("HCLOUD_TOKEN")
+			if !a.complete() {
+				if p == nil {
+					return missingError(a)
+				}
+				if token == "" {
+					return errors.New("HCLOUD_TOKEN is not set")
+				}
+				if err := promptMissing(cmd.Context(), p, hetzner.New(token), &a, stderr); err != nil {
+					return err
+				}
+			}
+			opts.Name, opts.Location, opts.ServerType, opts.SSHKey = a.Name, a.Location, a.ServerType, a.SSHKey
 			var err error
-			if opts.Flake, err = config.ParseFlake(flake); err != nil {
+			if opts.Flake, err = config.ParseFlake(a.Flake); err != nil {
 				return err
 			}
 			if opts.Labels, err = config.ParseLabels(labels); err != nil {
 				return err
 			}
-			token := getenv("HCLOUD_TOKEN")
 			if token == "" {
 				return errors.New("HCLOUD_TOKEN is not set")
 			}
@@ -135,8 +161,25 @@ func newCreateCmd(stdout, stderr io.Writer, getenv func(string) string, created 
 	f.StringArrayVar(&labels, "label", nil, "extra server label key=value (repeatable)")
 	f.StringVar(&opts.LogDir, "log-dir", "./nixzner-logs", "directory for logs of failed installs")
 	f.DurationVar(&opts.Timeout, "timeout", 30*time.Minute, "overall deadline")
-	for _, name := range []string{"flake", "type", "location", "ssh-key"} {
-		_ = cmd.MarkFlagRequired(name)
-	}
 	return cmd
+}
+
+// missingError reports every value a non-interactive create lacks.
+func missingError(a answers) error {
+	var errs []error
+	if a.Name == "" {
+		errs = append(errs, errors.New("missing server name: nixzner create <name> ..."))
+	}
+	var flags []string
+	for _, f := range []struct{ name, value string }{
+		{"flake", a.Flake}, {"type", a.ServerType}, {"location", a.Location}, {"ssh-key", a.SSHKey},
+	} {
+		if f.value == "" {
+			flags = append(flags, strconv.Quote(f.name))
+		}
+	}
+	if len(flags) > 0 {
+		errs = append(errs, fmt.Errorf("required flag(s) %s not set", strings.Join(flags, ", ")))
+	}
+	return errors.Join(errs...)
 }

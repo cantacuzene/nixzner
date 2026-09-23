@@ -11,9 +11,13 @@ import (
 )
 
 func runCLI(env map[string]string, args ...string) (int, string, string) {
+	return runCLIWith(nil, env, args...)
+}
+
+func runCLIWith(p prompter, env map[string]string, args ...string) (int, string, string) {
 	var stdout, stderr bytes.Buffer
 	var created atomic.Pointer[hetzner.Server]
-	code := run(context.Background(), args, &stdout, &stderr, func(k string) string { return env[k] }, &created)
+	code := run(context.Background(), args, &stdout, &stderr, func(k string) string { return env[k] }, &created, p)
 	return code, stdout.String(), stderr.String()
 }
 
@@ -60,5 +64,28 @@ func TestCreateRequiresToken(t *testing.T) {
 	code, _, stderr := runCLI(nil, fullArgs...)
 	if code != 1 || !strings.Contains(stderr, "HCLOUD_TOKEN is not set") {
 		t.Fatalf("code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestCreateWithoutTerminalNamesEverythingMissing(t *testing.T) {
+	code, _, stderr := runCLI(nil, "create")
+	for _, want := range []string{"server name", `required flag(s) "flake", "type", "location", "ssh-key" not set`} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr %q does not mention %q", stderr, want)
+		}
+	}
+	if code != 1 {
+		t.Errorf("code = %d, want 1", code)
+	}
+}
+
+func TestCreateInteractiveChecksTokenBeforePrompting(t *testing.T) {
+	p := newFakePrompter(nil)
+	code, _, stderr := runCLIWith(p, nil, "create")
+	if code != 1 || !strings.Contains(stderr, "HCLOUD_TOKEN is not set") {
+		t.Fatalf("code=%d stderr=%q", code, stderr)
+	}
+	if len(p.asked) != 0 {
+		t.Errorf("asked %v before checking the token", p.asked)
 	}
 }
