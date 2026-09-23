@@ -1,4 +1,4 @@
-module hinfect
+module nixzner
 
 go 1.26.0
 

@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"hinfect/internal/hetzner"
+	"nixzner/internal/hetzner"
 )
 
 func runCLI(env map[string]string, args ...string) (int, string, string) {

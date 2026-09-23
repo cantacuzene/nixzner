@@ -153,7 +153,7 @@ func validRequest() CreateRequest {
 	return CreateRequest{
 		Name: "web1", ServerType: "cx32", Location: "fsn1", Image: "debian-12", SSHKey: "admin",
 		Firewalls: []string{"web"}, Networks: []string{"internal"},
-		Labels: map[string]string{"managed-by": "hinfect"},
+		Labels: map[string]string{"managed-by": "nixzner"},
 	}
 }
 
@@ -211,7 +211,7 @@ func TestCreateServer(t *testing.T) {
 	for k, v := range b["labels"].(map[string]any) {
 		labels[k] = v.(string)
 	}
-	if !maps.Equal(labels, map[string]string{"managed-by": "hinfect"}) {
+	if !maps.Equal(labels, map[string]string{"managed-by": "nixzner"}) {
 		t.Errorf("labels = %v", labels)
 	}
 	for _, field := range []string{"ssh_keys", "firewalls", "networks"} {
@@ -252,11 +252,11 @@ func TestDeleteServerNotFoundIsNotAnError(t *testing.T) {
 
 func TestSetLabels(t *testing.T) {
 	c, f := newFakeAPI(t)
-	if err := c.SetLabels(context.Background(), 42, map[string]string{"hinfect-status": "ready"}); err != nil {
+	if err := c.SetLabels(context.Background(), 42, map[string]string{"nixzner-status": "ready"}); err != nil {
 		t.Fatal(err)
 	}
 	got := f.updateBody["labels"].(map[string]any)
-	if got["hinfect-status"] != "ready" {
+	if got["nixzner-status"] != "ready" {
 		t.Fatalf("update body = %v", f.updateBody)
 	}
 }

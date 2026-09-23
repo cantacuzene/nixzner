@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"hinfect/internal/config"
+	"nixzner/internal/config"
 )
 
 type Runner interface {

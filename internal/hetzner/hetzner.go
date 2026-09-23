@@ -1,4 +1,4 @@
-// Package hetzner is the slice of the Hetzner Cloud API hinfect needs.
+// Package hetzner is the slice of the Hetzner Cloud API nixzner needs.
 package hetzner
 
 import (
@@ -33,7 +33,7 @@ type Client struct {
 }
 
 func New(token string, opts ...hcloud.ClientOption) *Client {
-	opts = append([]hcloud.ClientOption{hcloud.WithToken(token), hcloud.WithApplication("hinfect", "dev")}, opts...)
+	opts = append([]hcloud.ClientOption{hcloud.WithToken(token), hcloud.WithApplication("nixzner", "dev")}, opts...)
 	return &Client{hc: hcloud.NewClient(opts...)}
 }
 

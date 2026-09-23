@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// CreateOptions is everything `hinfect create` needs, already parsed.
+// CreateOptions is everything `nixzner create` needs, already parsed.
 type CreateOptions struct {
 	Name       string
 	Flake      FlakeRef

@@ -13,26 +13,26 @@ import (
 	"testing"
 	"time"
 
-	"hinfect/internal/hetzner"
+	"nixzner/internal/hetzner"
 )
 
 // Run with:
 //
-//	HCLOUD_TOKEN=... HINFECT_TEST_SSH_KEY=<hetzner key name> \
-//	HINFECT_TEST_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" \
-//	go test -tags integration -run TestCreateIntegration -timeout 45m -v ./cmd/hinfect/
+//	HCLOUD_TOKEN=... NIXZNER_TEST_SSH_KEY=<hetzner key name> \
+//	NIXZNER_TEST_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" \
+//	go test -tags integration -run TestCreateIntegration -timeout 45m -v ./cmd/nixzner/
 //
 // The matching private key must be loaded in ssh-agent. Costs a few cents.
 func TestCreateIntegration(t *testing.T) {
 	token := os.Getenv("HCLOUD_TOKEN")
-	sshKey := os.Getenv("HINFECT_TEST_SSH_KEY")
-	pubKey := os.Getenv("HINFECT_TEST_PUBKEY")
+	sshKey := os.Getenv("NIXZNER_TEST_SSH_KEY")
+	pubKey := os.Getenv("NIXZNER_TEST_PUBKEY")
 	if token == "" || sshKey == "" || pubKey == "" {
-		t.Skip("set HCLOUD_TOKEN, HINFECT_TEST_SSH_KEY and HINFECT_TEST_PUBKEY")
+		t.Skip("set HCLOUD_TOKEN, NIXZNER_TEST_SSH_KEY and NIXZNER_TEST_PUBKEY")
 	}
-	serverType := envOr("HINFECT_TEST_TYPE", "cx23")
-	location := envOr("HINFECT_TEST_LOCATION", "nbg1")
-	host := envOr("HINFECT_TEST_HOST", "example")
+	serverType := envOr("NIXZNER_TEST_TYPE", "cx23")
+	location := envOr("NIXZNER_TEST_LOCATION", "nbg1")
+	host := envOr("NIXZNER_TEST_HOST", "example")
 
 	flakeDir := t.TempDir()
 	if err := os.CopyFS(flakeDir, os.DirFS("../../examples/flake")); err != nil {
@@ -53,7 +53,7 @@ func TestCreateIntegration(t *testing.T) {
 		}
 	})
 
-	name := fmt.Sprintf("hinfect-it-%d", time.Now().Unix())
+	name := fmt.Sprintf("nixzner-it-%d", time.Now().Unix())
 	var stdout bytes.Buffer
 	code := run(context.Background(), []string{
 		"create", name,

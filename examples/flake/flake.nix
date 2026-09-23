@@ -1,5 +1,5 @@
 {
-  description = "Minimal NixOS host installable with hinfect on Hetzner Cloud";
+  description = "Minimal NixOS host installable with nixzner on Hetzner Cloud";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";

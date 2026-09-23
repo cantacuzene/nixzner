@@ -1,21 +1,21 @@
-# hinfect `create` Implementation Plan
+# nixzner `create` Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build `hinfect create`, a Go CLI that creates a Hetzner Cloud server, installs NixOS on it from a flake via nixos-anywhere, verifies the first boot, and deletes the server on any failure.
+**Goal:** Build `nixzner create`, a Go CLI that creates a Hetzner Cloud server, installs NixOS on it from a flake via nixos-anywhere, verifies the first boot, and deletes the server on any failure.
 
-**Architecture:** A cobra CLI (`cmd/hinfect`) parses flags into `config.CreateOptions` and hands them to `create.Run`, which drives a `pipeline.Pipeline` of steps (preflight → create server → wait for SSH → install → verify → finalize). Steps call three narrow interfaces — `hetzner` (hcloud-go), `nixos` (nix/nixos-anywhere subprocesses), `sshcheck` (x/crypto/ssh) — so the orchestration is unit-tested with fakes. Cleanups registered by steps run in reverse order under a fresh context on failure or interrupt.
+**Architecture:** A cobra CLI (`cmd/nixzner`) parses flags into `config.CreateOptions` and hands them to `create.Run`, which drives a `pipeline.Pipeline` of steps (preflight → create server → wait for SSH → install → verify → finalize). Steps call three narrow interfaces — `hetzner` (hcloud-go), `nixos` (nix/nixos-anywhere subprocesses), `sshcheck` (x/crypto/ssh) — so the orchestration is unit-tested with fakes. Cleanups registered by steps run in reverse order under a fresh context on failure or interrupt.
 
 **Tech Stack:** Go ≥ 1.23, `github.com/hetznercloud/hcloud-go/v2`, `github.com/spf13/cobra`, `golang.org/x/crypto/ssh` (+ `ssh/agent`), `os/exec`.
 
-**Spec:** `docs/superpowers/specs/2026-09-22-hinfect-create-design.md`
+**Spec:** `docs/superpowers/specs/2026-09-22-nixzner-create-design.md`
 
 ## Global Constraints
 
-- Go module path: `hinfect`. Minimum Go 1.23 (uses `os.CopyFS`, `context.AfterFunc`, builtin `min`).
-- Binary name: `hinfect`. Only command in v1: `create`.
+- Go module path: `nixzner`. Minimum Go 1.23 (uses `os.CopyFS`, `context.AfterFunc`, builtin `min`).
+- Binary name: `nixzner`. Only command in v1: `create`.
 - Hetzner token comes only from env `HCLOUD_TOKEN`.
-- Labels always applied: `managed-by=hinfect`, `hinfect-flake=<sanitized flake>`, `hinfect-status=installing|ready`. User label keys `managed-by` or starting with `hinfect-` are rejected.
+- Labels always applied: `managed-by=nixzner`, `nixzner-flake=<sanitized flake>`, `nixzner-status=installing|ready`. User label keys `managed-by` or starting with `nixzner-` are rejected.
 - Hetzner label rule: name/value ≤ 63 chars, `[a-zA-Z0-9._-]`, alphanumeric at both ends (value may be empty); key may have a DNS-subdomain prefix `prefix/name`.
 - nixos-anywhere is always invoked with `--build-on remote` and `--ssh-option StrictHostKeyChecking=no --ssh-option UserKnownHostsFile=/dev/null`.
 - Exit codes: `0` success, `1` failed (nothing left behind), `2` failed and cleanup failed.
@@ -42,9 +42,9 @@
 go.mod, go.sum
 .gitignore
 README.md
-cmd/hinfect/main.go              cobra root + create command, signal handling, exit codes
-cmd/hinfect/main_test.go         flag/env error paths (no network)
-cmd/hinfect/integration_test.go  //go:build integration — real Hetzner run
+cmd/nixzner/main.go              cobra root + create command, signal handling, exit codes
+cmd/nixzner/main_test.go         flag/env error paths (no network)
+cmd/nixzner/integration_test.go  //go:build integration — real Hetzner run
 internal/config/flake.go         FlakeRef, ParseFlake, ToplevelAttr
 internal/config/labels.go        label validation, sanitizing, ParseLabels, SystemLabels
 internal/config/options.go       CreateOptions + Validate
@@ -76,7 +76,7 @@ examples/flake/{flake.nix,configuration.nix,disk-config.nix,authorized_keys}
 - Consumes: nothing.
 - Produces:
   - `type FlakeRef struct { URI, Host string }`; `func ParseFlake(s string) (FlakeRef, error)`; `func (f FlakeRef) String() string`; `func (f FlakeRef) ToplevelAttr() string`
-  - Constants `LabelManagedBy="managed-by"`, `ManagedByValue="hinfect"`, `LabelFlake="hinfect-flake"`, `LabelStatus="hinfect-status"`, `StatusInstalling="installing"`, `StatusReady="ready"`
+  - Constants `LabelManagedBy="managed-by"`, `ManagedByValue="nixzner"`, `LabelFlake="nixzner-flake"`, `LabelStatus="nixzner-status"`, `StatusInstalling="installing"`, `StatusReady="ready"`
   - `func ValidLabelKey(string) bool`, `func ValidLabelValue(string) bool`, `func SanitizeLabelValue(string) string`, `func ParseLabels([]string) (map[string]string, error)`, `func SystemLabels(user map[string]string, flake FlakeRef, status string) map[string]string`
   - `type CreateOptions struct { Name string; Flake FlakeRef; ServerType, Location, SSHKey, Identity, Image string; Firewalls, Networks []string; Labels map[string]string; LogDir string; Timeout time.Duration }`; `func (o CreateOptions) Validate() error`
 
@@ -88,14 +88,14 @@ Go is not installed on the dev machine yet.
 brew install go
 go version   # expect go1.23 or newer
 cd /Users/hugocantacuzene/Code/hetznerInfector
-go mod init hinfect
+go mod init nixzner
 ```
 
 Create `.gitignore`:
 
 ```gitignore
-/hinfect
-/hinfect-logs/
+/nixzner
+/nixzner-logs/
 ```
 
 - [ ] **Step 2: Write failing tests for flake parsing**
@@ -279,7 +279,7 @@ func TestParseLabels(t *testing.T) {
 		"bad key=x":        "invalid label key",
 		"env=bad value":    "invalid label value",
 		"managed-by=me":    "reserved",
-		"hinfect-status=x": "reserved",
+		"nixzner-status=x": "reserved",
 	}
 	for in, wantMsg := range bad {
 		_, err := ParseLabels([]string{in})
@@ -295,9 +295,9 @@ func TestSystemLabels(t *testing.T) {
 	got := SystemLabels(user, flake, StatusInstalling)
 	want := map[string]string{
 		"env":            "prod",
-		"managed-by":     "hinfect",
-		"hinfect-flake":  "web1",
-		"hinfect-status": "installing",
+		"managed-by":     "nixzner",
+		"nixzner-flake":  "web1",
+		"nixzner-status": "installing",
 	}
 	if !maps.Equal(got, want) {
 		t.Errorf("got %v, want %v", got, want)
@@ -327,9 +327,9 @@ import (
 
 const (
 	LabelManagedBy   = "managed-by"
-	ManagedByValue   = "hinfect"
-	LabelFlake       = "hinfect-flake"
-	LabelStatus      = "hinfect-status"
+	ManagedByValue   = "nixzner"
+	LabelFlake       = "nixzner-flake"
+	LabelStatus      = "nixzner-status"
 	StatusInstalling = "installing"
 	StatusReady      = "ready"
 )
@@ -378,15 +378,15 @@ func ParseLabels(pairs []string) (map[string]string, error) {
 			return nil, fmt.Errorf("invalid label key %q", k)
 		case !ValidLabelValue(v):
 			return nil, fmt.Errorf("invalid label value %q for key %q", v, k)
-		case k == LabelManagedBy || strings.HasPrefix(k, "hinfect-"):
-			return nil, fmt.Errorf("label key %q is reserved for hinfect", k)
+		case k == LabelManagedBy || strings.HasPrefix(k, "nixzner-"):
+			return nil, fmt.Errorf("label key %q is reserved for nixzner", k)
 		}
 		labels[k] = v
 	}
 	return labels, nil
 }
 
-// SystemLabels returns a copy of user with the labels hinfect always sets.
+// SystemLabels returns a copy of user with the labels nixzner always sets.
 func SystemLabels(user map[string]string, flake FlakeRef, status string) map[string]string {
 	labels := maps.Clone(user)
 	if labels == nil {
@@ -420,7 +420,7 @@ func validOpts() CreateOptions {
 		Location:   "fsn1",
 		SSHKey:     "admin",
 		Image:      "debian-12",
-		LogDir:     "./hinfect-logs",
+		LogDir:     "./nixzner-logs",
 		Timeout:    30 * time.Minute,
 	}
 }
@@ -476,7 +476,7 @@ import (
 	"time"
 )
 
-// CreateOptions is everything `hinfect create` needs, already parsed.
+// CreateOptions is everything `nixzner create` needs, already parsed.
 type CreateOptions struct {
 	Name       string
 	Flake      FlakeRef
@@ -792,7 +792,7 @@ import (
 	"strings"
 	"testing"
 
-	"hinfect/internal/config"
+	"nixzner/internal/config"
 )
 
 type call struct {
@@ -950,7 +950,7 @@ import (
 	"strings"
 	"time"
 
-	"hinfect/internal/config"
+	"nixzner/internal/config"
 )
 
 type Runner interface {
@@ -1701,7 +1701,7 @@ func validRequest() CreateRequest {
 	return CreateRequest{
 		Name: "web1", ServerType: "cx32", Location: "fsn1", Image: "debian-12", SSHKey: "admin",
 		Firewalls: []string{"web"}, Networks: []string{"internal"},
-		Labels: map[string]string{"managed-by": "hinfect"},
+		Labels: map[string]string{"managed-by": "nixzner"},
 	}
 }
 
@@ -1759,7 +1759,7 @@ func TestCreateServer(t *testing.T) {
 	for k, v := range b["labels"].(map[string]any) {
 		labels[k] = v.(string)
 	}
-	if !maps.Equal(labels, map[string]string{"managed-by": "hinfect"}) {
+	if !maps.Equal(labels, map[string]string{"managed-by": "nixzner"}) {
 		t.Errorf("labels = %v", labels)
 	}
 	for _, field := range []string{"ssh_keys", "firewalls", "networks"} {
@@ -1800,11 +1800,11 @@ func TestDeleteServerNotFoundIsNotAnError(t *testing.T) {
 
 func TestSetLabels(t *testing.T) {
 	c, f := newFakeAPI(t)
-	if err := c.SetLabels(context.Background(), 42, map[string]string{"hinfect-status": "ready"}); err != nil {
+	if err := c.SetLabels(context.Background(), 42, map[string]string{"nixzner-status": "ready"}); err != nil {
 		t.Fatal(err)
 	}
 	got := f.updateBody["labels"].(map[string]any)
-	if got["hinfect-status"] != "ready" {
+	if got["nixzner-status"] != "ready" {
 		t.Fatalf("update body = %v", f.updateBody)
 	}
 }
@@ -1820,7 +1820,7 @@ Expected: FAIL — `undefined: New`.
 `internal/hetzner/hetzner.go`:
 
 ```go
-// Package hetzner is the slice of the Hetzner Cloud API hinfect needs.
+// Package hetzner is the slice of the Hetzner Cloud API nixzner needs.
 package hetzner
 
 import (
@@ -1855,7 +1855,7 @@ type Client struct {
 }
 
 func New(token string, opts ...hcloud.ClientOption) *Client {
-	opts = append([]hcloud.ClientOption{hcloud.WithToken(token), hcloud.WithApplication("hinfect", "dev")}, opts...)
+	opts = append([]hcloud.ClientOption{hcloud.WithToken(token), hcloud.WithApplication("nixzner", "dev")}, opts...)
 	return &Client{hc: hcloud.NewClient(opts...)}
 }
 
@@ -2054,9 +2054,9 @@ import (
 	"testing"
 	"time"
 
-	"hinfect/internal/config"
-	"hinfect/internal/hetzner"
-	"hinfect/internal/nixos"
+	"nixzner/internal/config"
+	"nixzner/internal/hetzner"
+	"nixzner/internal/nixos"
 )
 
 const storePath = "/nix/store/abc-nixos-system-web1"
@@ -2188,10 +2188,10 @@ func TestRunSuccess(t *testing.T) {
 	if res.Server.ID != 42 || res.StorePath != storePath {
 		t.Fatalf("result = %+v", res)
 	}
-	if f.createReq.Labels["hinfect-status"] != "installing" || f.createReq.Labels["env"] != "prod" {
+	if f.createReq.Labels["nixzner-status"] != "installing" || f.createReq.Labels["env"] != "prod" {
 		t.Errorf("create labels = %v", f.createReq.Labels)
 	}
-	if f.labels["hinfect-status"] != "ready" || f.labels["env"] != "prod" {
+	if f.labels["nixzner-status"] != "ready" || f.labels["env"] != "prod" {
 		t.Errorf("final labels = %v", f.labels)
 	}
 	if f.installArgs.Host != "203.0.113.10" || f.installArgs.Flake != opts.Flake {
@@ -2344,7 +2344,7 @@ Expected: FAIL — `undefined: Run`.
 `internal/create/create.go`:
 
 ```go
-// Package create implements `hinfect create`: provision a Hetzner server,
+// Package create implements `nixzner create`: provision a Hetzner server,
 // install NixOS with nixos-anywhere, verify the boot, and delete the server
 // if anything fails.
 package create
@@ -2358,10 +2358,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"hinfect/internal/config"
-	"hinfect/internal/hetzner"
-	"hinfect/internal/nixos"
-	"hinfect/internal/pipeline"
+	"nixzner/internal/config"
+	"nixzner/internal/hetzner"
+	"nixzner/internal/nixos"
+	"nixzner/internal/pipeline"
 )
 
 type Hetzner interface {
@@ -2409,7 +2409,7 @@ func Run(ctx context.Context, opts config.CreateOptions, d Deps) (Result, error)
 	if err := opts.Validate(); err != nil {
 		return Result{}, err
 	}
-	logFile, err := os.CreateTemp(d.TempDir, "hinfect-*.log")
+	logFile, err := os.CreateTemp(d.TempDir, "nixzner-*.log")
 	if err != nil {
 		return Result{}, err
 	}
@@ -2536,11 +2536,11 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 7: `hinfect` CLI
+### Task 7: `nixzner` CLI
 
 **Files:**
-- Create: `cmd/hinfect/main.go`
-- Test: `cmd/hinfect/main_test.go`
+- Create: `cmd/nixzner/main.go`
+- Test: `cmd/nixzner/main_test.go`
 
 **Interfaces:**
 - Consumes: `config.ParseFlake`, `config.ParseLabels`, `config.CreateOptions`; `create.Run`, `create.Deps`, `create.ErrCleanupFailed`; `hetzner.New`, `hetzner.Server`; `nixos.Nix`, `nixos.ExecRunner`, `nixos.CheckTools`; `sshcheck.Checker`, `sshcheck.DefaultBackoff`, `sshcheck.AuthMethods`.
@@ -2554,7 +2554,7 @@ go get github.com/spf13/cobra
 
 - [ ] **Step 2: Write failing tests**
 
-`cmd/hinfect/main_test.go`:
+`cmd/nixzner/main_test.go`:
 
 ```go
 package main
@@ -2566,7 +2566,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"hinfect/internal/hetzner"
+	"nixzner/internal/hetzner"
 )
 
 func runCLI(env map[string]string, args ...string) (int, string, string) {
@@ -2627,15 +2627,15 @@ func TestCreateRequiresToken(t *testing.T) {
 
 - [ ] **Step 3: Run to verify failure**
 
-Run: `go test ./cmd/hinfect/`
+Run: `go test ./cmd/nixzner/`
 Expected: FAIL — `undefined: run`.
 
 - [ ] **Step 4: Implement**
 
-`cmd/hinfect/main.go`:
+`cmd/nixzner/main.go`:
 
 ```go
-// Command hinfect creates Hetzner Cloud servers running NixOS.
+// Command nixzner creates Hetzner Cloud servers running NixOS.
 package main
 
 import (
@@ -2652,11 +2652,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"hinfect/internal/config"
-	"hinfect/internal/create"
-	"hinfect/internal/hetzner"
-	"hinfect/internal/nixos"
-	"hinfect/internal/sshcheck"
+	"nixzner/internal/config"
+	"nixzner/internal/create"
+	"nixzner/internal/hetzner"
+	"nixzner/internal/nixos"
+	"nixzner/internal/sshcheck"
 )
 
 func main() {
@@ -2691,7 +2691,7 @@ func handleSignals(sigs <-chan os.Signal, cancel context.CancelFunc, created *at
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv func(string) string, created *atomic.Pointer[hetzner.Server]) int {
 	root := &cobra.Command{
-		Use:          "hinfect",
+		Use:          "nixzner",
 		Short:        "Install NixOS on Hetzner Cloud servers",
 		SilenceUsage: true,
 	}
@@ -2770,7 +2770,7 @@ func newCreateCmd(stdout, stderr io.Writer, getenv func(string) string, created 
 	f.StringArrayVar(&opts.Firewalls, "firewall", nil, "existing firewall to attach (repeatable)")
 	f.StringArrayVar(&opts.Networks, "network", nil, "existing network to attach (repeatable)")
 	f.StringArrayVar(&labels, "label", nil, "extra server label key=value (repeatable)")
-	f.StringVar(&opts.LogDir, "log-dir", "./hinfect-logs", "directory for logs of failed installs")
+	f.StringVar(&opts.LogDir, "log-dir", "./nixzner-logs", "directory for logs of failed installs")
 	f.DurationVar(&opts.Timeout, "timeout", 30*time.Minute, "overall deadline")
 	for _, name := range []string{"flake", "type", "location", "ssh-key"} {
 		_ = cmd.MarkFlagRequired(name)
@@ -2781,14 +2781,14 @@ func newCreateCmd(stdout, stderr io.Writer, getenv func(string) string, created 
 
 - [ ] **Step 5: Run tests and build**
 
-Run: `go test ./... && go vet ./... && go build -o hinfect ./cmd/hinfect && ./hinfect create --help`
+Run: `go test ./... && go vet ./... && go build -o nixzner ./cmd/nixzner && ./nixzner create --help`
 Expected: all PASS; help text lists every flag above.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add go.mod go.sum cmd/hinfect/main.go cmd/hinfect/main_test.go
-git commit -m "feat(cli): hinfect create command
+git add go.mod go.sum cmd/nixzner/main.go cmd/nixzner/main_test.go
+git commit -m "feat(cli): nixzner create command
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
@@ -2799,7 +2799,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 **Files:**
 - Create: `examples/flake/flake.nix`, `examples/flake/configuration.nix`, `examples/flake/disk-config.nix`, `examples/flake/authorized_keys`
-- Create: `cmd/hinfect/integration_test.go`
+- Create: `cmd/nixzner/integration_test.go`
 - Create: `README.md`
 
 **Interfaces:**
@@ -2812,7 +2812,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ```nix
 {
-  description = "Minimal NixOS host installable with hinfect on Hetzner Cloud";
+  description = "Minimal NixOS host installable with nixzner on Hetzner Cloud";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
@@ -2860,7 +2860,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     settings.PasswordAuthentication = false;
   };
 
-  # hinfect verifies the install by logging in as root with the key it
+  # nixzner verifies the install by logging in as root with the key it
   # bootstrapped with, so that public key must be in this file.
   users.users.root.openssh.authorizedKeys.keyFiles = [ ./authorized_keys ];
 
@@ -2916,7 +2916,7 @@ If `nixos-26.05` does not exist on the `NixOS/nixpkgs` branches when you do this
 
 - [ ] **Step 2: Write the integration test**
 
-`cmd/hinfect/integration_test.go`:
+`cmd/nixzner/integration_test.go`:
 
 ```go
 //go:build integration
@@ -2934,26 +2934,26 @@ import (
 	"testing"
 	"time"
 
-	"hinfect/internal/hetzner"
+	"nixzner/internal/hetzner"
 )
 
 // Run with:
 //
-//	HCLOUD_TOKEN=... HINFECT_TEST_SSH_KEY=<hetzner key name> \
-//	HINFECT_TEST_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" \
-//	go test -tags integration -run TestCreateIntegration -timeout 45m -v ./cmd/hinfect/
+//	HCLOUD_TOKEN=... NIXZNER_TEST_SSH_KEY=<hetzner key name> \
+//	NIXZNER_TEST_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" \
+//	go test -tags integration -run TestCreateIntegration -timeout 45m -v ./cmd/nixzner/
 //
 // The matching private key must be loaded in ssh-agent. Costs a few cents.
 func TestCreateIntegration(t *testing.T) {
 	token := os.Getenv("HCLOUD_TOKEN")
-	sshKey := os.Getenv("HINFECT_TEST_SSH_KEY")
-	pubKey := os.Getenv("HINFECT_TEST_PUBKEY")
+	sshKey := os.Getenv("NIXZNER_TEST_SSH_KEY")
+	pubKey := os.Getenv("NIXZNER_TEST_PUBKEY")
 	if token == "" || sshKey == "" || pubKey == "" {
-		t.Skip("set HCLOUD_TOKEN, HINFECT_TEST_SSH_KEY and HINFECT_TEST_PUBKEY")
+		t.Skip("set HCLOUD_TOKEN, NIXZNER_TEST_SSH_KEY and NIXZNER_TEST_PUBKEY")
 	}
-	serverType := envOr("HINFECT_TEST_TYPE", "cx23")
-	location := envOr("HINFECT_TEST_LOCATION", "nbg1")
-	host := envOr("HINFECT_TEST_HOST", "example")
+	serverType := envOr("NIXZNER_TEST_TYPE", "cx23")
+	location := envOr("NIXZNER_TEST_LOCATION", "nbg1")
+	host := envOr("NIXZNER_TEST_HOST", "example")
 
 	flakeDir := t.TempDir()
 	if err := os.CopyFS(flakeDir, os.DirFS("../../examples/flake")); err != nil {
@@ -2974,7 +2974,7 @@ func TestCreateIntegration(t *testing.T) {
 		}
 	})
 
-	name := fmt.Sprintf("hinfect-it-%d", time.Now().Unix())
+	name := fmt.Sprintf("nixzner-it-%d", time.Now().Unix())
 	var stdout bytes.Buffer
 	code := run(context.Background(), []string{
 		"create", name,
@@ -3003,7 +3003,7 @@ func envOr(key, def string) string {
 
 - [ ] **Step 3: Verify it compiles and skips without credentials**
 
-Run: `go vet -tags integration ./... && go test -tags integration -run TestCreateIntegration -v ./cmd/hinfect/`
+Run: `go vet -tags integration ./... && go test -tags integration -run TestCreateIntegration -v ./cmd/nixzner/`
 Expected: vet clean; test output `--- SKIP: TestCreateIntegration`.
 
 - [ ] **Step 4: Write README**
@@ -3011,18 +3011,18 @@ Expected: vet clean; test output `--- SKIP: TestCreateIntegration`.
 `README.md`:
 
 ````markdown
-# hinfect
+# nixzner
 
 Create a Hetzner Cloud server and install NixOS on it from your flake, in one command.
 
-`hinfect create` creates the server from a stock Debian image, runs
+`nixzner create` creates the server from a stock Debian image, runs
 [nixos-anywhere](https://github.com/nix-community/nixos-anywhere) against it
 (kexec → disko → install, building on the server), and verifies that the
 server boots into exactly the system your flake describes. If anything
 fails — or you press Ctrl-C — the server is deleted and the full log is kept
-in `./hinfect-logs/`.
+in `./nixzner-logs/`.
 
-hinfect stops at a verified first boot. Deploy later changes with
+nixzner stops at a verified first boot. Deploy later changes with
 `nixos-rebuild --target-host`, deploy-rs, or colmena.
 
 ## Requirements
@@ -3035,7 +3035,7 @@ hinfect stops at a verified first boot. Deploy later changes with
 - A flake whose `nixosConfigurations.<host>`:
   - has a disko config for `/dev/sda`,
   - sets `nixpkgs.hostPlatform` to match the server type (`cax*` is `aarch64-linux`, the rest `x86_64-linux`),
-  - authorizes that same public key for root. **Otherwise hinfect cannot verify the install and will delete the server.**
+  - authorizes that same public key for root. **Otherwise nixzner cannot verify the install and will delete the server.**
 
 `examples/flake/` is a known-good starting point.
 
@@ -3043,7 +3043,7 @@ hinfect stops at a verified first boot. Deploy later changes with
 
 ```sh
 export HCLOUD_TOKEN=...
-hinfect create web1 \
+nixzner create web1 \
   --flake .#web1 \
   --type cx32 \
   --location fsn1 \
@@ -3061,8 +3061,8 @@ Progress goes to stderr.
 | 1 | Failed; nothing left behind |
 | 2 | Failed **and** the server could not be deleted — it is still billed; the command to delete it is printed |
 
-Servers get the labels `managed-by=hinfect`, `hinfect-flake=<flake>`, and
-`hinfect-status=installing|ready`.
+Servers get the labels `managed-by=nixzner`, `nixzner-flake=<flake>`, and
+`nixzner-status=installing|ready`.
 
 ## Security note
 
@@ -3076,8 +3076,8 @@ need host key pinning, pre-generate host keys and ship them in your flake.
 ```sh
 go test ./...
 # Real Hetzner run (costs a few cents, deletes the server afterwards):
-HCLOUD_TOKEN=... HINFECT_TEST_SSH_KEY=admin HINFECT_TEST_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" \
-  go test -tags integration -run TestCreateIntegration -timeout 45m -v ./cmd/hinfect/
+HCLOUD_TOKEN=... NIXZNER_TEST_SSH_KEY=admin NIXZNER_TEST_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" \
+  go test -tags integration -run TestCreateIntegration -timeout 45m -v ./cmd/nixzner/
 ```
 ````
 
@@ -3089,7 +3089,7 @@ Expected: all PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add examples cmd/hinfect/integration_test.go README.md
+git add examples cmd/nixzner/integration_test.go README.md
 git commit -m "docs: example flake, integration test, README
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"

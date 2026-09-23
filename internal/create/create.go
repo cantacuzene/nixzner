@@ -1,4 +1,4 @@
-// Package create implements `hinfect create`: provision a Hetzner server,
+// Package create implements `nixzner create`: provision a Hetzner server,
 // install NixOS with nixos-anywhere, verify the boot, and delete the server
 // if anything fails.
 package create
@@ -12,10 +12,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"hinfect/internal/config"
-	"hinfect/internal/hetzner"
-	"hinfect/internal/nixos"
-	"hinfect/internal/pipeline"
+	"nixzner/internal/config"
+	"nixzner/internal/hetzner"
+	"nixzner/internal/nixos"
+	"nixzner/internal/pipeline"
 )
 
 type Hetzner interface {
@@ -63,7 +63,7 @@ func Run(ctx context.Context, opts config.CreateOptions, d Deps) (Result, error)
 	if err := opts.Validate(); err != nil {
 		return Result{}, err
 	}
-	logFile, err := os.CreateTemp(d.TempDir, "hinfect-*.log")
+	logFile, err := os.CreateTemp(d.TempDir, "nixzner-*.log")
 	if err != nil {
 		return Result{}, err
 	}

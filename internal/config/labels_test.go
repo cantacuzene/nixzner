@@ -68,7 +68,7 @@ func TestParseLabels(t *testing.T) {
 		"bad key=x":        "invalid label key",
 		"env=bad value":    "invalid label value",
 		"managed-by=me":    "reserved",
-		"hinfect-status=x": "reserved",
+		"nixzner-status=x": "reserved",
 	}
 	for in, wantMsg := range bad {
 		_, err := ParseLabels([]string{in})
@@ -84,9 +84,9 @@ func TestSystemLabels(t *testing.T) {
 	got := SystemLabels(user, flake, StatusInstalling)
 	want := map[string]string{
 		"env":            "prod",
-		"managed-by":     "hinfect",
-		"hinfect-flake":  "web1",
-		"hinfect-status": "installing",
+		"managed-by":     "nixzner",
+		"nixzner-flake":  "web1",
+		"nixzner-status": "installing",
 	}
 	if !maps.Equal(got, want) {
 		t.Errorf("got %v, want %v", got, want)

@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"hinfect/internal/config"
-	"hinfect/internal/hetzner"
-	"hinfect/internal/nixos"
+	"nixzner/internal/config"
+	"nixzner/internal/hetzner"
+	"nixzner/internal/nixos"
 )
 
 const storePath = "/nix/store/abc-nixos-system-web1"
@@ -148,10 +148,10 @@ func TestRunSuccess(t *testing.T) {
 	if res.Server.ID != 42 || res.StorePath != storePath {
 		t.Fatalf("result = %+v", res)
 	}
-	if f.createReq.Labels["hinfect-status"] != "installing" || f.createReq.Labels["env"] != "prod" {
+	if f.createReq.Labels["nixzner-status"] != "installing" || f.createReq.Labels["env"] != "prod" {
 		t.Errorf("create labels = %v", f.createReq.Labels)
 	}
-	if f.labels["hinfect-status"] != "ready" || f.labels["env"] != "prod" {
+	if f.labels["nixzner-status"] != "ready" || f.labels["env"] != "prod" {
 		t.Errorf("final labels = %v", f.labels)
 	}
 	if f.installArgs.Host != "203.0.113.10" || f.installArgs.Flake != opts.Flake {

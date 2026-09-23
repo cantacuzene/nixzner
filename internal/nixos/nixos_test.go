@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"hinfect/internal/config"
+	"nixzner/internal/config"
 )
 
 type call struct {

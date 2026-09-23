@@ -1,4 +1,4 @@
-// Command hinfect creates Hetzner Cloud servers running NixOS.
+// Command nixzner creates Hetzner Cloud servers running NixOS.
 package main
 
 import (
@@ -15,11 +15,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"hinfect/internal/config"
-	"hinfect/internal/create"
-	"hinfect/internal/hetzner"
-	"hinfect/internal/nixos"
-	"hinfect/internal/sshcheck"
+	"nixzner/internal/config"
+	"nixzner/internal/create"
+	"nixzner/internal/hetzner"
+	"nixzner/internal/nixos"
+	"nixzner/internal/sshcheck"
 )
 
 func main() {
@@ -54,7 +54,7 @@ func handleSignals(sigs <-chan os.Signal, cancel context.CancelFunc, created *at
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv func(string) string, created *atomic.Pointer[hetzner.Server]) int {
 	root := &cobra.Command{
-		Use:          "hinfect",
+		Use:          "nixzner",
 		Short:        "Install NixOS on Hetzner Cloud servers",
 		SilenceUsage: true,
 	}
@@ -133,7 +133,7 @@ func newCreateCmd(stdout, stderr io.Writer, getenv func(string) string, created 
 	f.StringArrayVar(&opts.Firewalls, "firewall", nil, "existing firewall to attach (repeatable)")
 	f.StringArrayVar(&opts.Networks, "network", nil, "existing network to attach (repeatable)")
 	f.StringArrayVar(&labels, "label", nil, "extra server label key=value (repeatable)")
-	f.StringVar(&opts.LogDir, "log-dir", "./hinfect-logs", "directory for logs of failed installs")
+	f.StringVar(&opts.LogDir, "log-dir", "./nixzner-logs", "directory for logs of failed installs")
 	f.DurationVar(&opts.Timeout, "timeout", 30*time.Minute, "overall deadline")
 	for _, name := range []string{"flake", "type", "location", "ssh-key"} {
 		_ = cmd.MarkFlagRequired(name)

@@ -16,7 +16,7 @@
     settings.PasswordAuthentication = false;
   };
 
-  # hinfect verifies the install by logging in as root with the key it
+  # nixzner verifies the install by logging in as root with the key it
   # bootstrapped with, so that public key must be in this file.
   users.users.root.openssh.authorizedKeys.keyFiles = [ ./authorized_keys ];
 

@@ -9,9 +9,9 @@ import (
 
 const (
 	LabelManagedBy   = "managed-by"
-	ManagedByValue   = "hinfect"
-	LabelFlake       = "hinfect-flake"
-	LabelStatus      = "hinfect-status"
+	ManagedByValue   = "nixzner"
+	LabelFlake       = "nixzner-flake"
+	LabelStatus      = "nixzner-status"
 	StatusInstalling = "installing"
 	StatusReady      = "ready"
 )
@@ -60,15 +60,15 @@ func ParseLabels(pairs []string) (map[string]string, error) {
 			return nil, fmt.Errorf("invalid label key %q", k)
 		case !ValidLabelValue(v):
 			return nil, fmt.Errorf("invalid label value %q for key %q", v, k)
-		case k == LabelManagedBy || strings.HasPrefix(k, "hinfect-"):
-			return nil, fmt.Errorf("label key %q is reserved for hinfect", k)
+		case k == LabelManagedBy || strings.HasPrefix(k, "nixzner-"):
+			return nil, fmt.Errorf("label key %q is reserved for nixzner", k)
 		}
 		labels[k] = v
 	}
 	return labels, nil
 }
 
-// SystemLabels returns a copy of user with the labels hinfect always sets.
+// SystemLabels returns a copy of user with the labels nixzner always sets.
 func SystemLabels(user map[string]string, flake FlakeRef, status string) map[string]string {
 	labels := maps.Clone(user)
 	if labels == nil {

@@ -14,7 +14,7 @@ func validOpts() CreateOptions {
 		Location:   "fsn1",
 		SSHKey:     "admin",
 		Image:      "debian-12",
-		LogDir:     "./hinfect-logs",
+		LogDir:     "./nixzner-logs",
 		Timeout:    30 * time.Minute,
 	}
 }

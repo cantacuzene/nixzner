@@ -1,15 +1,15 @@
-# hinfect
+# nixzner
 
 Create a Hetzner Cloud server and install NixOS on it from your flake, in one command.
 
-`hinfect create` creates the server from a stock Debian image, runs
+`nixzner create` creates the server from a stock Debian image, runs
 [nixos-anywhere](https://github.com/nix-community/nixos-anywhere) against it
 (kexec → disko → install, building on the server), and verifies that the
 server boots into exactly the system your flake describes. If anything
 fails — or you press Ctrl-C — the server is deleted and the full log is kept
-in `./hinfect-logs/`.
+in `./nixzner-logs/`.
 
-hinfect stops at a verified first boot. Deploy later changes with
+nixzner stops at a verified first boot. Deploy later changes with
 `nixos-rebuild --target-host`, deploy-rs, or colmena.
 
 ## Requirements
@@ -22,18 +22,18 @@ hinfect stops at a verified first boot. Deploy later changes with
 - A flake whose `nixosConfigurations.<host>`:
   - has a disko config for `/dev/sda`,
   - sets `nixpkgs.hostPlatform` to match the server type (`cax*` is `aarch64-linux`, the rest `x86_64-linux`),
-  - authorizes that same public key for root. **Otherwise hinfect cannot verify the install and will delete the server.**
+  - authorizes that same public key for root. **Otherwise nixzner cannot verify the install and will delete the server.**
 
 `examples/flake/` is a known-good starting point. Put your public key in its
 `authorized_keys` file (and `git add` it — flakes only see tracked files).
 
-Building hinfect itself needs Go 1.26 or newer: `go build ./cmd/hinfect`.
+Building nixzner itself needs Go 1.26 or newer: `go build ./cmd/nixzner`.
 
 ## Usage
 
 ```sh
 export HCLOUD_TOKEN=...
-hinfect create web1 \
+nixzner create web1 \
   --flake .#web1 \
   --type cx32 \
   --location fsn1 \
@@ -51,8 +51,8 @@ Progress goes to stderr.
 | 1 | Failed; nothing left behind |
 | 2 | Failed **and** the server could not be deleted — it is still billed; the command to delete it is printed |
 
-Servers get the labels `managed-by=hinfect`, `hinfect-flake=<flake>`, and
-`hinfect-status=installing|ready`.
+Servers get the labels `managed-by=nixzner`, `nixzner-flake=<flake>`, and
+`nixzner-status=installing|ready`.
 
 ## Security note
 
@@ -66,10 +66,10 @@ need host key pinning, pre-generate host keys and ship them in your flake.
 ```sh
 go test ./...
 # Real Hetzner run (costs a few cents, deletes the server afterwards):
-HCLOUD_TOKEN=... HINFECT_TEST_SSH_KEY=admin HINFECT_TEST_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" \
-  go test -tags integration -run TestCreateIntegration -timeout 45m -v ./cmd/hinfect/
+HCLOUD_TOKEN=... NIXZNER_TEST_SSH_KEY=admin NIXZNER_TEST_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" \
+  go test -tags integration -run TestCreateIntegration -timeout 45m -v ./cmd/nixzner/
 ```
 
-Optional overrides for the integration test: `HINFECT_TEST_TYPE` (default
-`cx23`), `HINFECT_TEST_LOCATION` (default `nbg1`), `HINFECT_TEST_HOST`
+Optional overrides for the integration test: `NIXZNER_TEST_TYPE` (default
+`cx23`), `NIXZNER_TEST_LOCATION` (default `nbg1`), `NIXZNER_TEST_HOST`
 (default `example`; use `example-arm` with a `cax*` type).
