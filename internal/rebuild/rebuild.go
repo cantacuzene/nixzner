@@ -4,6 +4,7 @@
 package rebuild
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"nixzner/internal/config"
+	"nixzner/internal/flakewrap"
 	"nixzner/internal/hetzner"
 	"nixzner/internal/nixos"
 	"nixzner/internal/pipeline"
@@ -38,6 +40,7 @@ type Options struct {
 	Name     string
 	Flake    config.FlakeRef
 	Identity string // private key file; empty means use ssh-agent
+	User     string // login user to set up; "" means the server's nixzner-user label, if any
 	LogDir   string
 	Timeout  time.Duration
 }
@@ -46,6 +49,11 @@ func (o Options) validate() error {
 	var errs []error
 	if err := config.ValidateServerName(o.Name); err != nil {
 		errs = append(errs, err)
+	}
+	if o.User != "" {
+		if err := config.ValidateUser(o.User); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	if o.Flake.Host == "" {
 		errs = append(errs, errors.New("--flake is required"))
@@ -86,10 +94,14 @@ func Run(ctx context.Context, opts Options, d Deps) (Result, error) {
 	out := io.MultiWriter(d.Stderr, log)
 	progress := func(format string, args ...any) { fmt.Fprintf(out, format+"\n", args...) }
 
+	cleanupWrap := func() {}
+	defer func() { cleanupWrap() }()
 	var (
 		res    Result
 		labels map[string]string
 		remote nixos.Remote
+		flake  config.FlakeRef
+		target string
 		// state describes the server if the current step fails.
 		state = "nothing on the server was changed"
 	)
@@ -105,14 +117,24 @@ func Run(ctx context.Context, opts Options, d Deps) (Result, error) {
 			if l[config.LabelManagedBy] != config.ManagedByValue {
 				return nil, fmt.Errorf("server %q is not managed by nixzner (no %s=%s label)", opts.Name, config.LabelManagedBy, config.ManagedByValue)
 			}
+			labelUser := l[config.LabelUser]
+			if opts.User != "" && labelUser != "" && opts.User != labelUser {
+				return nil, fmt.Errorf("server %q was set up with --user %s; changing the user is not supported", opts.Name, labelUser)
+			}
+			target = cmp.Or(opts.User, labelUser)
 			res.Server, labels = srv, l
-			remote = nixos.Remote{Host: srv.IPv4, Identity: opts.Identity}
+			remote = nixos.Remote{Host: srv.IPv4, User: labelUser, Identity: opts.Identity}
 			progress("    server %s (id %d) at %s", srv.Name, srv.ID, srv.IPv4)
-			res.StorePath, err = d.Nix.Eval(ctx, opts.Flake)
+			var cleanup func()
+			if flake, cleanup, err = flakewrap.Wrap(opts.Flake, target); err != nil {
+				return nil, err
+			}
+			cleanupWrap = cleanup
+			res.StorePath, err = d.Nix.Eval(ctx, flake)
 			return nil, err
 		}},
 		{Name: "build", Run: func(ctx context.Context) (pipeline.Cleanup, error) {
-			built, err := d.Nix.BuildRemote(ctx, opts.Flake, remote, out)
+			built, err := d.Nix.BuildRemote(ctx, flake, remote, out)
 			if err != nil {
 				return nil, err
 			}
@@ -122,7 +144,11 @@ func Run(ctx context.Context, opts Options, d Deps) (Result, error) {
 			return nil, nil
 		}},
 		{Name: "activate", Run: func(ctx context.Context) (pipeline.Cleanup, error) {
-			state = fmt.Sprintf("the previous system is still the boot default; to return to it now, run:\n    ssh root@%s /nix/var/nix/profiles/system/bin/switch-to-configuration test", remote.Host)
+			login, sudo := "root", ""
+			if remote.User != "" {
+				login, sudo = remote.User, "sudo "
+			}
+			state = fmt.Sprintf("the previous system is still the boot default; to return to it now, run:\n    ssh %s@%s %s/nix/var/nix/profiles/system/bin/switch-to-configuration test", login, remote.Host, sudo)
 			return nil, d.Nix.Activate(ctx, remote, res.StorePath, out)
 		}},
 		{Name: "make boot default", Run: func(ctx context.Context) (pipeline.Cleanup, error) {
@@ -133,12 +159,15 @@ func Run(ctx context.Context, opts Options, d Deps) (Result, error) {
 			state = "the new system was activated and made the boot default, but is not what the server reports as running"
 			ctx, cancel := context.WithTimeout(ctx, d.VerifyWait)
 			defer cancel()
-			return nil, d.SSH.VerifyNixOS(ctx, "", remote.Host, res.StorePath)
+			return nil, d.SSH.VerifyNixOS(ctx, target, remote.Host, res.StorePath)
 		}},
 		{Name: "finalize", Run: func(ctx context.Context) (pipeline.Cleanup, error) {
 			state = "the server runs the new system; only updating its labels failed"
 			l := maps.Clone(labels)
 			l[config.LabelFlake] = config.FlakeLabel(opts.Flake)
+			if target != "" {
+				l[config.LabelUser] = target
+			}
 			return nil, d.Hetzner.SetLabels(ctx, res.Server.ID, l)
 		}},
 	}

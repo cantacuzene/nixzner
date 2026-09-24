@@ -27,6 +27,7 @@ type fakes struct {
 	setLabels map[string]string
 	remotes   []nixos.Remote
 	built     string
+	evalFlake config.FlakeRef
 	fail      map[string]error
 }
 
@@ -55,6 +56,7 @@ func (f *fakes) SetLabels(_ context.Context, id int64, labels map[string]string)
 }
 
 func (f *fakes) Eval(_ context.Context, fl config.FlakeRef) (string, error) {
+	f.evalFlake = fl
 	return storePath, f.record("eval %s", fl)
 }
 
@@ -129,6 +131,12 @@ func TestRunRebuildsInOrder(t *testing.T) {
 	}
 	if _, err := os.Stat(opts.LogDir); !os.IsNotExist(err) {
 		t.Errorf("log dir created on success: %v", err)
+	}
+	if f.evalFlake != opts.Flake {
+		t.Errorf("flake wrapped without a user: %+v", f.evalFlake)
+	}
+	if _, ok := f.setLabels["nixzner-user"]; ok {
+		t.Errorf("nixzner-user set without a user")
 	}
 }
 
@@ -205,6 +213,88 @@ func TestRunValidatesOptions(t *testing.T) {
 	opts.Name = "Web_1"
 	if _, err := Run(context.Background(), opts, d); err == nil {
 		t.Fatal("want error for invalid name")
+	}
+	if len(f.calls) != 0 {
+		t.Errorf("calls = %v, want none", f.calls)
+	}
+}
+
+func TestRunConvertsRootServerToUser(t *testing.T) {
+	opts, d, f, _ := setup(t)
+	opts.User = "mp"
+	opts.Flake = config.FlakeRef{URI: "path:" + t.TempDir(), Host: "web1"}
+	if _, err := Run(context.Background(), opts, d); err != nil {
+		t.Fatal(err)
+	}
+	if f.remotes[0].User != "" {
+		t.Errorf("logged in as %q, want root (no label yet)", f.remotes[0].User)
+	}
+	if f.evalFlake == opts.Flake || !strings.HasPrefix(f.evalFlake.URI, "path:") {
+		t.Errorf("evaluated %+v, want a wrapper", f.evalFlake)
+	}
+	if !slices.Contains(f.calls, "verify 203.0.113.10 "+storePath+" as mp") {
+		t.Errorf("calls = %v, want verify as mp", f.calls)
+	}
+	if f.setLabels["nixzner-user"] != "mp" {
+		t.Errorf("labels = %v", f.setLabels)
+	}
+	if _, err := os.Stat(strings.TrimPrefix(f.evalFlake.URI, "path:")); !os.IsNotExist(err) {
+		t.Errorf("wrapper dir left behind: %v", err)
+	}
+}
+
+func TestRunUsesUserFromLabel(t *testing.T) {
+	opts, d, f, _ := setup(t)
+	opts.Flake = config.FlakeRef{URI: "path:" + t.TempDir(), Host: "web1"}
+	f.labels["nixzner-user"] = "mp"
+	if _, err := Run(context.Background(), opts, d); err != nil {
+		t.Fatal(err)
+	}
+	if f.remotes[0].User != "mp" {
+		t.Errorf("logged in as %q, want mp", f.remotes[0].User)
+	}
+	if f.evalFlake == opts.Flake {
+		t.Errorf("flake not wrapped for the labelled user")
+	}
+	if !slices.Contains(f.calls, "verify 203.0.113.10 "+storePath+" as mp") {
+		t.Errorf("calls = %v", f.calls)
+	}
+	if f.setLabels["nixzner-user"] != "mp" {
+		t.Errorf("labels = %v", f.setLabels)
+	}
+}
+
+func TestRunRefusesChangingUser(t *testing.T) {
+	opts, d, f, _ := setup(t)
+	opts.User = "alice"
+	f.labels["nixzner-user"] = "mp"
+	_, err := Run(context.Background(), opts, d)
+	if err == nil || !strings.Contains(err.Error(), "changing the user is not supported") {
+		t.Fatalf("err = %v", err)
+	}
+	if want := []string{"find web1"}; !slices.Equal(f.calls, want) {
+		t.Errorf("calls = %v, want %v", f.calls, want)
+	}
+}
+
+func TestRunActivationHintUsesLoginUser(t *testing.T) {
+	opts, d, f, stderr := setup(t)
+	opts.Flake = config.FlakeRef{URI: "path:" + t.TempDir(), Host: "web1"}
+	f.labels["nixzner-user"] = "mp"
+	f.fail["activate"] = errors.New("unit failed")
+	if _, err := Run(context.Background(), opts, d); err == nil {
+		t.Fatal("want error")
+	}
+	if want := "ssh mp@203.0.113.10 sudo /nix/var/nix/profiles/system/bin/switch-to-configuration test"; !strings.Contains(stderr.String(), want) {
+		t.Errorf("stderr %q does not mention %q", stderr.String(), want)
+	}
+}
+
+func TestRunValidatesUser(t *testing.T) {
+	opts, d, f, _ := setup(t)
+	opts.User = "root"
+	if _, err := Run(context.Background(), opts, d); err == nil {
+		t.Fatal("want error")
 	}
 	if len(f.calls) != 0 {
 		t.Errorf("calls = %v, want none", f.calls)
