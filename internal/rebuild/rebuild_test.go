@@ -28,6 +28,7 @@ type fakes struct {
 	remotes   []nixos.Remote
 	built     string
 	evalFlake config.FlakeRef
+	bootUser  string
 	fail      map[string]error
 }
 
@@ -71,6 +72,7 @@ func (f *fakes) Activate(_ context.Context, r nixos.Remote, out string, _ io.Wri
 }
 
 func (f *fakes) MakeBootDefault(_ context.Context, r nixos.Remote, out string, _ io.Writer) error {
+	f.bootUser = r.User
 	return f.record("bootdefault %s on %s", out, r.Host)
 }
 
@@ -298,5 +300,36 @@ func TestRunValidatesUser(t *testing.T) {
 	}
 	if len(f.calls) != 0 {
 		t.Errorf("calls = %v, want none", f.calls)
+	}
+}
+
+func TestRunConversionContinuesAsTheNewUserAfterActivation(t *testing.T) {
+	opts, d, f, _ := setup(t)
+	opts.User = "mp"
+	opts.Flake = config.FlakeRef{URI: "path:" + t.TempDir(), Host: "web1"}
+	if _, err := Run(context.Background(), opts, d); err != nil {
+		t.Fatal(err)
+	}
+	if f.bootUser != "mp" {
+		t.Errorf("made boot default as %q, want mp: root login is off once the new system is active", f.bootUser)
+	}
+	activate := slices.IndexFunc(f.calls, func(c string) bool { return strings.HasPrefix(c, "activate") })
+	boot := slices.IndexFunc(f.calls, func(c string) bool { return strings.HasPrefix(c, "bootdefault") })
+	label := slices.Index(f.calls, "labels 42")
+	if !(activate < label && label < boot) {
+		t.Errorf("calls = %v, want nixzner-user recorded between activate and bootdefault", f.calls)
+	}
+}
+
+func TestRunConversionRecordsUserEvenIfBootDefaultFails(t *testing.T) {
+	opts, d, f, _ := setup(t)
+	opts.User = "mp"
+	opts.Flake = config.FlakeRef{URI: "path:" + t.TempDir(), Host: "web1"}
+	f.fail["bootdefault"] = errors.New("boom")
+	if _, err := Run(context.Background(), opts, d); err == nil {
+		t.Fatal("want error")
+	}
+	if f.setLabels["nixzner-user"] != "mp" {
+		t.Errorf("labels = %v, want nixzner-user=mp so a rerun logs in as mp", f.setLabels)
 	}
 }

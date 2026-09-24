@@ -149,7 +149,20 @@ func Run(ctx context.Context, opts Options, d Deps) (Result, error) {
 				login, sudo = remote.User, "sudo "
 			}
 			state = fmt.Sprintf("the previous system is still the boot default; to return to it now, run:\n    ssh %s@%s %s/nix/var/nix/profiles/system/bin/switch-to-configuration test", login, remote.Host, sudo)
-			return nil, d.Nix.Activate(ctx, remote, res.StorePath, out)
+			if err := d.Nix.Activate(ctx, remote, res.StorePath, out); err != nil {
+				return nil, err
+			}
+			if target == "" || remote.User == target {
+				return nil, nil
+			}
+			// The new system is active and only target may log in now:
+			// continue as target, and record it so a rerun does too.
+			remote.User = target
+			labels = maps.Clone(labels)
+			labels[config.LabelUser] = target
+			state = fmt.Sprintf("the new system is running and only %s can log in; it is not yet the boot default", target)
+			progress("    root login is now disabled; continuing as %s", target)
+			return nil, d.Hetzner.SetLabels(ctx, res.Server.ID, labels)
 		}},
 		{Name: "make boot default", Run: func(ctx context.Context) (pipeline.Cleanup, error) {
 			state = "the new system is running, but may not be the boot default; a reboot may return to the previous system"
