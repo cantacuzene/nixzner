@@ -95,3 +95,23 @@ func TestSystemLabels(t *testing.T) {
 		t.Errorf("SystemLabels mutated its input: %v", user)
 	}
 }
+
+func TestFlakeLabelIsTheHostAttribute(t *testing.T) {
+	cases := map[string]string{
+		".#web1": "web1",
+		"path:/Users/someone/Code/mithril#mithril": "mithril",
+		"github:org/infra#db-1":                    "db-1",
+	}
+	for in, want := range cases {
+		f, err := ParseFlake(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := SystemLabels(nil, f, StatusReady)[LabelFlake]; got != want {
+			t.Errorf("flake label for %q = %q, want %q", in, got, want)
+		}
+		if got := FlakeLabel(f); got != want {
+			t.Errorf("FlakeLabel(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

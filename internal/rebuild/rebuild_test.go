@@ -120,7 +120,7 @@ func TestRunRebuildsInOrder(t *testing.T) {
 		t.Errorf("remote = %+v, want identity passed through", f.remotes[0])
 	}
 	wantLabels := map[string]string{
-		"managed-by": "nixzner", "nixzner-flake": config.SanitizeLabelValue(".#web1"),
+		"managed-by": "nixzner", "nixzner-flake": "web1",
 		"nixzner-status": "ready", "env": "prod",
 	}
 	if fmt.Sprint(f.setLabels) != fmt.Sprint(wantLabels) {

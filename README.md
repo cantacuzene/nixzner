@@ -62,7 +62,7 @@ Progress goes to stderr.
 | 1 | Failed; nothing left behind |
 | 2 | Failed **and** the server could not be deleted — it is still billed; the command to delete it is printed |
 
-Servers get the labels `managed-by=nixzner`, `nixzner-flake=<flake>`, and
+Servers get the labels `managed-by=nixzner`, `nixzner-flake=<host>` (the flake's `#<host>` part), and
 `nixzner-status=installing|ready`.
 
 ## Changing a server: `nixzner rebuild`

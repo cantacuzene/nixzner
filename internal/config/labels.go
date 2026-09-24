@@ -68,6 +68,10 @@ func ParseLabels(pairs []string) (map[string]string, error) {
 	return labels, nil
 }
 
+// FlakeLabel is the nixzner-flake label value for f: the host attribute
+// only, since the flake's location may be a local path.
+func FlakeLabel(f FlakeRef) string { return SanitizeLabelValue(f.Host) }
+
 // SystemLabels returns a copy of user with the labels nixzner always sets.
 func SystemLabels(user map[string]string, flake FlakeRef, status string) map[string]string {
 	labels := maps.Clone(user)
@@ -75,7 +79,7 @@ func SystemLabels(user map[string]string, flake FlakeRef, status string) map[str
 		labels = map[string]string{}
 	}
 	labels[LabelManagedBy] = ManagedByValue
-	labels[LabelFlake] = SanitizeLabelValue(flake.String())
+	labels[LabelFlake] = FlakeLabel(flake)
 	labels[LabelStatus] = status
 	return labels
 }

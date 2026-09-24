@@ -138,7 +138,7 @@ func Run(ctx context.Context, opts Options, d Deps) (Result, error) {
 		{Name: "finalize", Run: func(ctx context.Context) (pipeline.Cleanup, error) {
 			state = "the server runs the new system; only updating its labels failed"
 			l := maps.Clone(labels)
-			l[config.LabelFlake] = config.SanitizeLabelValue(opts.Flake.String())
+			l[config.LabelFlake] = config.FlakeLabel(opts.Flake)
 			return nil, d.Hetzner.SetLabels(ctx, res.Server.ID, l)
 		}},
 	}
