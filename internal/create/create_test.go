@@ -35,6 +35,8 @@ type fakes struct {
 	createReq                                 hetzner.CreateRequest
 	installArgs                               nixos.InstallArgs
 	verifiedPath                              string
+	evalFlake                                 config.FlakeRef
+	verifyUser                                string
 }
 
 func (f *fakes) record(c string) {
@@ -79,6 +81,7 @@ func (f *fakes) SetLabels(ctx context.Context, id int64, labels map[string]strin
 
 func (f *fakes) Eval(ctx context.Context, fl config.FlakeRef) (string, error) {
 	f.record("eval")
+	f.evalFlake = fl
 	return storePath, f.evalErr
 }
 
@@ -103,6 +106,7 @@ func (f *fakes) WaitForSSH(ctx context.Context, host string) error {
 
 func (f *fakes) VerifyNixOS(ctx context.Context, user, host, want string) error {
 	f.record("verify")
+	f.verifyUser = user
 	f.verifiedPath = want
 	return f.verifyErr
 }
@@ -156,6 +160,9 @@ func TestRunSuccess(t *testing.T) {
 	}
 	if f.installArgs.Host != "203.0.113.10" || f.installArgs.Flake != opts.Flake {
 		t.Errorf("install args = %+v", f.installArgs)
+	}
+	if f.verifyUser != "" || f.labels["nixzner-user"] != "" {
+		t.Errorf("without --user: verified as %q, labels %v", f.verifyUser, f.labels)
 	}
 	if f.verifiedPath != storePath {
 		t.Errorf("verified %q, want %q", f.verifiedPath, storePath)
@@ -290,5 +297,60 @@ func TestRunReportsCreatedServer(t *testing.T) {
 	_, _ = Run(context.Background(), testOpts(t), d)
 	if got.ID != 42 {
 		t.Fatalf("OnServerCreated got %+v", got)
+	}
+}
+
+func userOpts(t *testing.T) config.CreateOptions {
+	t.Helper()
+	opts := testOpts(t)
+	opts.User = "mp"
+	opts.Flake = config.FlakeRef{URI: "path:" + t.TempDir(), Host: "web1"}
+	return opts
+}
+
+func TestRunWithUserInstallsWrappedFlakeAndVerifiesAsUser(t *testing.T) {
+	f := &fakes{}
+	opts := userOpts(t)
+	if _, err := Run(context.Background(), opts, testDeps(t, f, &bytes.Buffer{})); err != nil {
+		t.Fatal(err)
+	}
+	wrapped := f.installArgs.Flake
+	if wrapped == opts.Flake || !strings.HasPrefix(wrapped.URI, "path:") || wrapped.Host != "web1" {
+		t.Errorf("installed flake = %+v, want a wrapper of %+v", wrapped, opts.Flake)
+	}
+	if f.evalFlake != wrapped {
+		t.Errorf("evaluated %+v but installed %+v", f.evalFlake, wrapped)
+	}
+	if f.verifyUser != "mp" {
+		t.Errorf("verified as %q, want mp", f.verifyUser)
+	}
+	if f.createReq.Labels["nixzner-user"] != "mp" || f.labels["nixzner-user"] != "mp" {
+		t.Errorf("labels = %v / %v, want nixzner-user=mp", f.createReq.Labels, f.labels)
+	}
+	if _, err := os.Stat(strings.TrimPrefix(wrapped.URI, "path:")); !os.IsNotExist(err) {
+		t.Errorf("wrapper dir left behind: %v", err)
+	}
+}
+
+func TestRunWithUserRemovesWrapperOnFailure(t *testing.T) {
+	f := &fakes{installErr: errBoom}
+	opts := userOpts(t)
+	if _, err := Run(context.Background(), opts, testDeps(t, f, &bytes.Buffer{})); err == nil {
+		t.Fatal("want error")
+	}
+	if _, err := os.Stat(strings.TrimPrefix(f.installArgs.Flake.URI, "path:")); !os.IsNotExist(err) {
+		t.Errorf("wrapper dir left behind: %v", err)
+	}
+}
+
+func TestRunWithUserRejectsRelativeFlake(t *testing.T) {
+	f := &fakes{}
+	opts := testOpts(t) // flake ".#web1"
+	opts.User = "mp"
+	if _, err := Run(context.Background(), opts, testDeps(t, f, &bytes.Buffer{})); err == nil {
+		t.Fatal("want error")
+	}
+	if len(f.Calls()) != 0 {
+		t.Errorf("calls = %v, want none", f.Calls())
 	}
 }

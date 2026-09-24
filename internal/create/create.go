@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"nixzner/internal/config"
+	"nixzner/internal/flakewrap"
 	"nixzner/internal/hetzner"
 	"nixzner/internal/nixos"
 	"nixzner/internal/pipeline"
@@ -62,6 +63,11 @@ func Run(ctx context.Context, opts config.CreateOptions, d Deps) (Result, error)
 	if err := opts.Validate(); err != nil {
 		return Result{}, err
 	}
+	flake, cleanupWrap, err := flakewrap.Wrap(opts.Flake, opts.User)
+	if err != nil {
+		return Result{}, err
+	}
+	defer cleanupWrap()
 	logFile, err := runlog.Start(d.TempDir)
 	if err != nil {
 		return Result{}, err
@@ -73,10 +79,17 @@ func Run(ctx context.Context, opts config.CreateOptions, d Deps) (Result, error)
 		res     Result
 		outPath string
 	)
+	labels := func(status string) map[string]string {
+		l := config.SystemLabels(opts.Labels, opts.Flake, status)
+		if opts.User != "" {
+			l[config.LabelUser] = opts.User
+		}
+		return l
+	}
 	req := hetzner.CreateRequest{
 		Name: opts.Name, ServerType: opts.ServerType, Location: opts.Location, Image: opts.Image,
 		SSHKey: opts.SSHKey, Firewalls: opts.Firewalls, Networks: opts.Networks,
-		Labels: config.SystemLabels(opts.Labels, opts.Flake, config.StatusInstalling),
+		Labels: labels(config.StatusInstalling),
 	}
 	steps := []pipeline.Step{
 		{Name: "preflight", Run: func(ctx context.Context) (pipeline.Cleanup, error) {
@@ -86,7 +99,7 @@ func Run(ctx context.Context, opts config.CreateOptions, d Deps) (Result, error)
 			if err := d.Hetzner.Preflight(ctx, req); err != nil {
 				return nil, err
 			}
-			p, err := d.Nix.Eval(ctx, opts.Flake)
+			p, err := d.Nix.Eval(ctx, flake)
 			outPath = p
 			return nil, err
 		}},
@@ -108,17 +121,16 @@ func Run(ctx context.Context, opts config.CreateOptions, d Deps) (Result, error)
 			return nil, d.SSH.WaitForSSH(ctx, res.Server.IPv4)
 		}},
 		{Name: "install nixos", Run: func(ctx context.Context) (pipeline.Cleanup, error) {
-			args := nixos.InstallArgs{Flake: opts.Flake, Host: res.Server.IPv4, Identity: opts.Identity}
+			args := nixos.InstallArgs{Flake: flake, Host: res.Server.IPv4, Identity: opts.Identity}
 			return nil, d.Nix.Install(ctx, args, out)
 		}},
 		{Name: "verify", Run: func(ctx context.Context) (pipeline.Cleanup, error) {
 			ctx, cancel := context.WithTimeout(ctx, d.VerifyWait)
 			defer cancel()
-			return nil, d.SSH.VerifyNixOS(ctx, "", res.Server.IPv4, outPath)
+			return nil, d.SSH.VerifyNixOS(ctx, opts.User, res.Server.IPv4, outPath)
 		}},
 		{Name: "finalize", Run: func(ctx context.Context) (pipeline.Cleanup, error) {
-			labels := config.SystemLabels(opts.Labels, opts.Flake, config.StatusReady)
-			return nil, d.Hetzner.SetLabels(ctx, res.Server.ID, labels)
+			return nil, d.Hetzner.SetLabels(ctx, res.Server.ID, labels(config.StatusReady))
 		}},
 	}
 
