@@ -124,6 +124,11 @@ func newCreateCmd(stdout, stderr io.Writer, getenv func(string) string, created 
 			if opts.Labels, err = config.ParseLabels(labels); err != nil {
 				return err
 			}
+			if opts.User != "" {
+				if err := config.ValidateUser(opts.User); err != nil {
+					return err
+				}
+			}
 			if token == "" {
 				return errors.New("HCLOUD_TOKEN is not set")
 			}
@@ -160,6 +165,7 @@ func newCreateCmd(stdout, stderr io.Writer, getenv func(string) string, created 
 	f.StringVar(&opts.Location, "location", "", "Hetzner location (e.g. fsn1)")
 	f.StringVar(&opts.SSHKey, "ssh-key", "", "name of an SSH key registered in the Hetzner project")
 	f.StringVar(&opts.Identity, "identity", "", "private key file for that SSH key (default: use ssh-agent)")
+	f.StringVar(&opts.User, "user", "", "create this login user with the flake's root SSH keys, and disable root SSH login")
 	f.StringVar(&opts.Image, "image", "debian-12", "bootstrap image nixos-anywhere replaces")
 	f.StringArrayVar(&opts.Firewalls, "firewall", nil, "existing firewall to attach (repeatable)")
 	f.StringArrayVar(&opts.Networks, "network", nil, "existing network to attach (repeatable)")
@@ -200,6 +206,11 @@ func newRebuildCmd(stdout, stderr io.Writer, getenv func(string) string, p promp
 			if opts.Flake, err = config.ResolveLocalFlake(opts.Flake); err != nil {
 				return err
 			}
+			if opts.User != "" {
+				if err := config.ValidateUser(opts.User); err != nil {
+					return err
+				}
+			}
 			token := getenv("HCLOUD_TOKEN")
 			if token == "" {
 				return errors.New("HCLOUD_TOKEN is not set")
@@ -230,7 +241,8 @@ func newRebuildCmd(stdout, stderr io.Writer, getenv func(string) string, p promp
 	}
 	f := cmd.Flags()
 	f.StringVar(&flake, "flake", "", "flake to build, as <uri>#<host> (e.g. .#web1)")
-	f.StringVar(&opts.Identity, "identity", "", "private key file for root on the server (default: use ssh-agent)")
+	f.StringVar(&opts.Identity, "identity", "", "private key file for the login user (default: use ssh-agent)")
+	f.StringVar(&opts.User, "user", "", "login user (default: the server's nixzner-user label); on a root-only server, sets it up and disables root SSH login")
 	f.StringVar(&opts.LogDir, "log-dir", "./nixzner-logs", "directory for logs of failed rebuilds")
 	f.DurationVar(&opts.Timeout, "timeout", 30*time.Minute, "overall deadline")
 	return cmd

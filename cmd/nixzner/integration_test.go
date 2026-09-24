@@ -55,14 +55,18 @@ func TestCreateIntegration(t *testing.T) {
 
 	name := fmt.Sprintf("nixzner-it-%d", time.Now().Unix())
 	var stdout bytes.Buffer
-	code := run(context.Background(), []string{
+	args := []string{
 		"create", name,
 		"--flake", "path:" + flakeDir + "#" + host,
 		"--type", serverType,
 		"--location", location,
 		"--ssh-key", sshKey,
 		"--log-dir", t.TempDir(),
-	}, &stdout, os.Stderr, os.Getenv, &created, nil)
+	}
+	if u := os.Getenv("NIXZNER_TEST_USER"); u != "" {
+		args = append(args, "--user", u)
+	}
+	code := run(context.Background(), args, &stdout, os.Stderr, os.Getenv, &created, nil)
 	if code != 0 {
 		t.Fatalf("exit code %d", code)
 	}

@@ -79,6 +79,20 @@ build fails nothing changed; if activation fails the previous system is still
 the boot default and the error prints the command to switch back. On a
 terminal `--flake` is asked for when missing (default `.#<name>`).
 
+### A login user instead of root: `--user`
+
+`nixzner create web1 ... --user mp` installs your flake plus a small module
+that creates `mp` with the SSH keys your flake gives root, lets `mp` use
+`sudo` and nix without a password, and sets `PermitRootLogin = "no"`. Your
+flake is not edited; nixzner adds the module for the run. nixzner verifies
+the install by logging in as `mp` and labels the server `nixzner-user=mp`.
+
+`nixzner rebuild` reads that label, so later rebuilds log in as `mp` and
+keep the module without repeating `--user`. `rebuild web1 --user mp` on a
+server created without `--user` converts it. Changing to a different user
+is refused. If neither root nor the user would get an SSH key, the build
+fails before anything changes.
+
 Unlike `create`, rebuild checks the server's SSH host key: it is trusted the
 first time and a changed key is refused. Some settings, like
 `networking.hostName`, only fully apply after a reboot, as with
@@ -102,4 +116,5 @@ HCLOUD_TOKEN=... NIXZNER_TEST_SSH_KEY=admin NIXZNER_TEST_PUBKEY="$(cat ~/.ssh/id
 
 Optional overrides for the integration test: `NIXZNER_TEST_TYPE` (default
 `cx23`), `NIXZNER_TEST_LOCATION` (default `nbg1`), `NIXZNER_TEST_HOST`
-(default `example`; use `example-arm` with a `cax*` type).
+(default `example`; use `example-arm` with a `cax*` type), `NIXZNER_TEST_USER`
+(runs create with `--user`).

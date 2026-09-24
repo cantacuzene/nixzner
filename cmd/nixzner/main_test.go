@@ -133,3 +133,18 @@ func TestRebuildInteractivePromptsForFlake(t *testing.T) {
 		t.Fatalf("code=%d stderr=%q", code, stderr)
 	}
 }
+
+func TestCreateRejectsRootUser(t *testing.T) {
+	args := append(append([]string{}, fullArgs...), "--user", "root")
+	code, _, stderr := runCLI(map[string]string{"HCLOUD_TOKEN": "x"}, args...)
+	if code != 1 || !strings.Contains(stderr, `--user must not be "root"`) {
+		t.Fatalf("code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestRebuildRejectsInvalidUser(t *testing.T) {
+	code, _, stderr := runCLI(map[string]string{"HCLOUD_TOKEN": "x"}, "rebuild", "web1", "--flake", ".#web1", "--user", "Bad User")
+	if code != 1 || !strings.Contains(stderr, "must be a Linux user name") {
+		t.Fatalf("code=%d stderr=%q", code, stderr)
+	}
+}
