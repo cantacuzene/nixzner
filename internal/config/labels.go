@@ -12,6 +12,7 @@ const (
 	ManagedByValue   = "nixzner"
 	LabelFlake       = "nixzner-flake"
 	LabelStatus      = "nixzner-status"
+	LabelUser        = "nixzner-user"
 	StatusInstalling = "installing"
 	StatusReady      = "ready"
 )

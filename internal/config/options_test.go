@@ -51,3 +51,31 @@ func TestValidateRejects(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateUser(t *testing.T) {
+	for _, ok := range []string{"mp", "_svc", "a-b_1", strings.Repeat("a", 32)} {
+		if err := ValidateUser(ok); err != nil {
+			t.Errorf("ValidateUser(%q) = %v, want nil", ok, err)
+		}
+	}
+	for _, bad := range []string{"", "root", "Mp", "1mp", "m p", "mp!", strings.Repeat("a", 33)} {
+		if err := ValidateUser(bad); err == nil {
+			t.Errorf("ValidateUser(%q) = nil, want error", bad)
+		}
+	}
+	if err := ValidateUser("root"); err == nil || !strings.Contains(err.Error(), `must not be "root"`) {
+		t.Errorf("root error = %v", err)
+	}
+}
+
+func TestValidateChecksUser(t *testing.T) {
+	o := validOpts()
+	o.User = "Root!"
+	if err := o.Validate(); err == nil || !strings.Contains(err.Error(), "--user") {
+		t.Fatalf("err = %v", err)
+	}
+	o.User = "mp"
+	if err := o.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
