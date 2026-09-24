@@ -83,11 +83,27 @@ func (n Nix) Install(ctx context.Context, a InstallArgs, log io.Writer) error {
 	return nil
 }
 
-// Remote is a running NixOS server reached as root over the system's ssh,
-// so ~/.ssh/config and ~/.ssh/known_hosts apply.
+// Remote is a running NixOS server reached over the system's ssh, so
+// ~/.ssh/config and ~/.ssh/known_hosts apply.
 type Remote struct {
 	Host     string // IPv4 address
+	User     string // login user; "" means root
 	Identity string // optional private key file
+}
+
+func (r Remote) login() string {
+	if r.User == "" {
+		return "root"
+	}
+	return r.User
+}
+
+// sudo prefixes commands that need root when logged in as another user.
+func (r Remote) sudo() string {
+	if r.login() == "root" {
+		return ""
+	}
+	return "sudo "
 }
 
 // sshOptions trusts a host key on first contact and refuses a changed one:
@@ -106,7 +122,7 @@ func (r Remote) sshOptions() []string {
 func (n Nix) BuildRemote(ctx context.Context, f config.FlakeRef, r Remote, log io.Writer) (string, error) {
 	args := append([]string{"NIX_SSHOPTS=" + strings.Join(r.sshOptions(), " "), "nix"}, nixFlags...)
 	args = append(args, "build", "--print-out-paths", "--no-link",
-		"--eval-store", "auto", "--store", "ssh-ng://root@"+r.Host+"?compress=true",
+		"--eval-store", "auto", "--store", "ssh-ng://"+r.login()+"@"+r.Host+"?compress=true",
 		f.ToplevelAttr())
 	var out bytes.Buffer
 	if err := n.Runner.Run(ctx, "env", args, &out, log); err != nil {
@@ -122,19 +138,19 @@ func (n Nix) BuildRemote(ctx context.Context, f config.FlakeRef, r Remote, log i
 // Activate switches the running system to outPath without touching the
 // bootloader, so a reboot still returns to the previous generation.
 func (n Nix) Activate(ctx context.Context, r Remote, outPath string, log io.Writer) error {
-	return n.ssh(ctx, r, outPath+"/bin/switch-to-configuration test", log)
+	return n.ssh(ctx, r, r.sudo()+outPath+"/bin/switch-to-configuration test", log)
 }
 
 // MakeBootDefault records outPath as the newest system generation and
 // installs it as the bootloader default.
 func (n Nix) MakeBootDefault(ctx context.Context, r Remote, outPath string, log io.Writer) error {
-	return n.ssh(ctx, r, "nix-env -p /nix/var/nix/profiles/system --set "+outPath+" && "+outPath+"/bin/switch-to-configuration boot", log)
+	return n.ssh(ctx, r, r.sudo()+"nix-env -p /nix/var/nix/profiles/system --set "+outPath+" && "+r.sudo()+outPath+"/bin/switch-to-configuration boot", log)
 }
 
 func (n Nix) ssh(ctx context.Context, r Remote, command string, log io.Writer) error {
-	args := append(r.sshOptions(), "root@"+r.Host, "--", command)
+	args := append(r.sshOptions(), r.login()+"@"+r.Host, "--", command)
 	if err := n.Runner.Run(ctx, "ssh", args, log, log); err != nil {
-		return fmt.Errorf("ssh root@%s %q: %w", r.Host, command, err)
+		return fmt.Errorf("ssh %s@%s %q: %w", r.login(), r.Host, command, err)
 	}
 	return nil
 }

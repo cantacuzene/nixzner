@@ -221,3 +221,36 @@ func TestMakeBootDefaultSetsProfileThenBootloader(t *testing.T) {
 		t.Fatalf("calls = %+v, want ssh %v", r.calls, want)
 	}
 }
+
+func TestBuildRemoteAsUser(t *testing.T) {
+	r := &fakeRunner{stdout: "/nix/store/abc\n"}
+	if _, err := (Nix{Runner: r}).BuildRemote(context.Background(), flake(t, ".#web1"), Remote{Host: "h", User: "mp"}, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(r.calls[0].args, "ssh-ng://mp@h?compress=true") {
+		t.Fatalf("args = %v, want store ssh-ng://mp@h", r.calls[0].args)
+	}
+}
+
+func TestActivateAsUserUsesSudo(t *testing.T) {
+	r := &fakeRunner{}
+	if err := (Nix{Runner: r}).Activate(context.Background(), Remote{Host: "h", User: "mp"}, "/nix/store/abc", &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new", "mp@h", "--",
+		"sudo /nix/store/abc/bin/switch-to-configuration test"}
+	if !slices.Equal(r.calls[0].args, want) {
+		t.Fatalf("args = %v, want %v", r.calls[0].args, want)
+	}
+}
+
+func TestMakeBootDefaultAsUserUsesSudo(t *testing.T) {
+	r := &fakeRunner{}
+	if err := (Nix{Runner: r}).MakeBootDefault(context.Background(), Remote{Host: "h", User: "mp"}, "/nix/store/abc", &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	want := "sudo nix-env -p /nix/var/nix/profiles/system --set /nix/store/abc && sudo /nix/store/abc/bin/switch-to-configuration boot"
+	if got := r.calls[0].args[len(r.calls[0].args)-1]; got != want {
+		t.Fatalf("command = %q, want %q", got, want)
+	}
+}
