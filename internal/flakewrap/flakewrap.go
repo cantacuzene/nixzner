@@ -19,6 +19,8 @@ in
 {
   users.users."@USER@" = {
     isNormalUser = true;
+    # wheel: flakes often restrict the sudo binary to it (execWheelOnly).
+    extraGroups = [ "wheel" ];
     openssh.authorizedKeys = { inherit (rootKeys) keys keyFiles; };
   };
   security.sudo.extraRules = [
@@ -27,6 +29,10 @@ in
   nix.settings.trusted-users = [ "@USER@" ];
   services.openssh.settings.PermitRootLogin = lib.mkForce "no";
   assertions = [
+    {
+      assertion = config.security.sudo.enable;
+      message = "nixzner --user: @USER@ needs sudo (security.sudo.enable), which the flake disables";
+    }
     {
       assertion = userKeys.keys != [ ] || userKeys.keyFiles != [ ];
       message = "nixzner --user: @USER@ has no SSH keys (the flake gives none to @USER@ or to root)";

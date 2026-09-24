@@ -333,3 +333,48 @@ func TestRunConversionRecordsUserEvenIfBootDefaultFails(t *testing.T) {
 		t.Errorf("labels = %v, want nixzner-user=mp so a rerun logs in as mp", f.setLabels)
 	}
 }
+
+func TestRunConversionActivationFailureGivesBothLogins(t *testing.T) {
+	opts, d, f, stderr := setup(t)
+	opts.User = "mp"
+	opts.Flake = config.FlakeRef{URI: "path:" + t.TempDir(), Host: "web1"}
+	f.fail["activate"] = errors.New("a unit failed")
+	if _, err := Run(context.Background(), opts, d); err == nil {
+		t.Fatal("want error")
+	}
+	for _, want := range []string{
+		"ssh root@203.0.113.10 /nix/var/nix/profiles/system/bin/switch-to-configuration test",
+		"If root is refused, the new system is active",
+		"ssh mp@203.0.113.10",
+		"hcloud server add-label web1 nixzner-user=mp",
+	} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("stderr %q does not mention %q", stderr.String(), want)
+		}
+	}
+}
+
+func TestRunConversionLabelFailureSaysHowToRecordUser(t *testing.T) {
+	opts, d, f, stderr := setup(t)
+	opts.User = "mp"
+	opts.Flake = config.FlakeRef{URI: "path:" + t.TempDir(), Host: "web1"}
+	f.fail["labels"] = errors.New("api down")
+	if _, err := Run(context.Background(), opts, d); err == nil {
+		t.Fatal("want error")
+	}
+	if want := "hcloud server add-label web1 nixzner-user=mp"; !strings.Contains(stderr.String(), want) {
+		t.Errorf("stderr %q does not mention %q", stderr.String(), want)
+	}
+}
+
+func TestRunRefusesInvalidUserLabel(t *testing.T) {
+	opts, d, f, _ := setup(t)
+	f.labels["nixzner-user"] = "root"
+	_, err := Run(context.Background(), opts, d)
+	if err == nil || !strings.Contains(err.Error(), `invalid nixzner-user label "root"`) {
+		t.Fatalf("err = %v", err)
+	}
+	if want := []string{"find web1"}; !slices.Equal(f.calls, want) {
+		t.Errorf("calls = %v, want %v", f.calls, want)
+	}
+}

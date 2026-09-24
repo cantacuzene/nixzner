@@ -14,6 +14,8 @@ func TestUserModule(t *testing.T) {
 	for _, want := range []string{
 		`users.users."mp" = {`,
 		`isNormalUser = true;`,
+		`extraGroups = [ "wheel" ];`,
+		`assertion = config.security.sudo.enable;`,
 		`openssh.authorizedKeys = { inherit (rootKeys) keys keyFiles; };`,
 		`{ users = [ "mp" ]; commands = [ { command = "ALL"; options = [ "NOPASSWD" ]; } ]; }`,
 		`nix.settings.trusted-users = [ "mp" ];`,

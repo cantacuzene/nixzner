@@ -156,6 +156,20 @@ func generateKeyPEM(t *testing.T) []byte {
 	return pem.EncodeToMemory(block)
 }
 
+func TestVerifyNixOSChecksUserCanSudo(t *testing.T) {
+	key := newSigner(t)
+	port := startServerAs(t, "127.0.0.1:0", "mp", key.PublicKey(), func(cmd string) (string, uint32) {
+		if cmd == "sudo -n true" {
+			return "sudo: a password is required", 1
+		}
+		return "/nix/store/abc\n", 0
+	})
+	err := checker(key, port).VerifyNixOS(withTimeout(t, 300*time.Millisecond), "mp", "127.0.0.1", "/nix/store/abc")
+	if err == nil || !strings.Contains(err.Error(), "mp cannot sudo without a password") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestVerifyNixOSLogsInAsUser(t *testing.T) {
 	key := newSigner(t)
 	port := startServerAs(t, "127.0.0.1:0", "mp", key.PublicKey(), func(string) (string, uint32) {

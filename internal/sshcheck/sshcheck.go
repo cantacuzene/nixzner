@@ -55,6 +55,12 @@ func (c Checker) VerifyNixOS(ctx context.Context, user, host, wantOutPath string
 		if got := strings.TrimSpace(out); got != wantOutPath {
 			return fmt.Errorf("running system is %q, want %q", got, wantOutPath)
 		}
+		// nixzner switches systems through sudo when not root.
+		if user != "" && user != "root" {
+			if _, err := run(client, "sudo -n true"); err != nil {
+				return fmt.Errorf("%s cannot sudo without a password: %w", user, err)
+			}
+		}
 		return nil
 	})
 }

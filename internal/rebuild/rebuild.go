@@ -118,6 +118,11 @@ func Run(ctx context.Context, opts Options, d Deps) (Result, error) {
 				return nil, fmt.Errorf("server %q is not managed by nixzner (no %s=%s label)", opts.Name, config.LabelManagedBy, config.ManagedByValue)
 			}
 			labelUser := l[config.LabelUser]
+			if labelUser != "" {
+				if err := config.ValidateUser(labelUser); err != nil {
+					return nil, fmt.Errorf("server %q has an invalid nixzner-user label %q: %w", opts.Name, labelUser, err)
+				}
+			}
 			if opts.User != "" && labelUser != "" && opts.User != labelUser {
 				return nil, fmt.Errorf("server %q was set up with --user %s; changing the user is not supported", opts.Name, labelUser)
 			}
@@ -149,6 +154,12 @@ func Run(ctx context.Context, opts Options, d Deps) (Result, error) {
 				login, sudo = remote.User, "sudo "
 			}
 			state = fmt.Sprintf("the previous system is still the boot default; to return to it now, run:\n    ssh %s@%s %s/nix/var/nix/profiles/system/bin/switch-to-configuration test", login, remote.Host, sudo)
+			recordUser := fmt.Sprintf("hcloud server add-label %s %s=%s", opts.Name, config.LabelUser, target)
+			if target != "" && remote.User != target {
+				// switch-to-configuration can fail after the new sshd (root
+				// login off) is already running.
+				state += fmt.Sprintf("\nIf root is refused, the new system is active: log in with ssh %s@%s, and record that for nixzner with:\n    %s", target, remote.Host, recordUser)
+			}
 			if err := d.Nix.Activate(ctx, remote, res.StorePath, out); err != nil {
 				return nil, err
 			}
@@ -160,7 +171,7 @@ func Run(ctx context.Context, opts Options, d Deps) (Result, error) {
 			remote.User = target
 			labels = maps.Clone(labels)
 			labels[config.LabelUser] = target
-			state = fmt.Sprintf("the new system is running and only %s can log in; it is not yet the boot default", target)
+			state = fmt.Sprintf("the new system is running and only %s can log in; it is not yet the boot default. If nixzner could not record that, run:\n    %s\nthen rerun rebuild.", target, recordUser)
 			progress("    root login is now disabled; continuing as %s", target)
 			return nil, d.Hetzner.SetLabels(ctx, res.Server.ID, labels)
 		}},
