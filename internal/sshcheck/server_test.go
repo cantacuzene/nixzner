@@ -29,12 +29,18 @@ func newSigner(t *testing.T) ssh.Signer {
 }
 
 // startServer serves SSH on addr ("127.0.0.1:0" for any port), accepting
-// only the authorized key, and returns the port it listens on.
+// only root with the authorized key, and returns the port it listens on.
 func startServer(t *testing.T, addr string, authorized ssh.PublicKey, handle execHandler) int {
 	t.Helper()
+	return startServerAs(t, addr, "root", authorized, handle)
+}
+
+// startServerAs is startServer accepting only user.
+func startServerAs(t *testing.T, addr, user string, authorized ssh.PublicKey, handle execHandler) int {
+	t.Helper()
 	cfg := &ssh.ServerConfig{
-		PublicKeyCallback: func(_ ssh.ConnMetadata, k ssh.PublicKey) (*ssh.Permissions, error) {
-			if bytes.Equal(k.Marshal(), authorized.Marshal()) {
+		PublicKeyCallback: func(meta ssh.ConnMetadata, k ssh.PublicKey) (*ssh.Permissions, error) {
+			if meta.User() == user && bytes.Equal(k.Marshal(), authorized.Marshal()) {
 				return nil, nil
 			}
 			return nil, errors.New("unauthorized")

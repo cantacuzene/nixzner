@@ -31,7 +31,7 @@ type Nix interface {
 }
 
 type SSH interface {
-	VerifyNixOS(ctx context.Context, host, wantOutPath string) error
+	VerifyNixOS(ctx context.Context, user, host, wantOutPath string) error
 }
 
 type Options struct {
@@ -133,7 +133,7 @@ func Run(ctx context.Context, opts Options, d Deps) (Result, error) {
 			state = "the new system was activated and made the boot default, but is not what the server reports as running"
 			ctx, cancel := context.WithTimeout(ctx, d.VerifyWait)
 			defer cancel()
-			return nil, d.SSH.VerifyNixOS(ctx, remote.Host, res.StorePath)
+			return nil, d.SSH.VerifyNixOS(ctx, "", remote.Host, res.StorePath)
 		}},
 		{Name: "finalize", Run: func(ctx context.Context) (pipeline.Cleanup, error) {
 			state = "the server runs the new system; only updating its labels failed"

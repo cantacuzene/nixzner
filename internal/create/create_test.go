@@ -101,7 +101,7 @@ func (f *fakes) WaitForSSH(ctx context.Context, host string) error {
 	return f.waitErr
 }
 
-func (f *fakes) VerifyNixOS(ctx context.Context, host, want string) error {
+func (f *fakes) VerifyNixOS(ctx context.Context, user, host, want string) error {
 	f.record("verify")
 	f.verifiedPath = want
 	return f.verifyErr

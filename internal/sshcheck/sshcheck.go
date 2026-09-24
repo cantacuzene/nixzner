@@ -36,17 +36,18 @@ type Checker struct {
 
 // WaitForSSH polls until root can log in and run a command.
 func (c Checker) WaitForSSH(ctx context.Context, host string) error {
-	return c.poll(ctx, host, func(client *ssh.Client) error {
+	return c.poll(ctx, "root", host, func(client *ssh.Client) error {
 		_, err := run(client, "true")
 		return err
 	})
 }
 
-// VerifyNixOS polls until the host runs NixOS with /run/current-system
-// pointing at wantOutPath. Polling matters: right after install the kexec
-// installer (also NixOS) may still be answering SSH.
-func (c Checker) VerifyNixOS(ctx context.Context, host, wantOutPath string) error {
-	return c.poll(ctx, host, func(client *ssh.Client) error {
+// VerifyNixOS polls until user ("" means root) can log in to a host running
+// NixOS with /run/current-system pointing at wantOutPath. Polling matters:
+// right after install the kexec installer (also NixOS) may still be
+// answering SSH.
+func (c Checker) VerifyNixOS(ctx context.Context, user, host, wantOutPath string) error {
+	return c.poll(ctx, user, host, func(client *ssh.Client) error {
 		out, err := run(client, "test -e /etc/NIXOS && readlink /run/current-system")
 		if err != nil {
 			return err
@@ -58,11 +59,11 @@ func (c Checker) VerifyNixOS(ctx context.Context, host, wantOutPath string) erro
 	})
 }
 
-func (c Checker) poll(ctx context.Context, host string, check func(*ssh.Client) error) error {
+func (c Checker) poll(ctx context.Context, user, host string, check func(*ssh.Client) error) error {
 	delay := c.Backoff.Initial
 	var last error
 	for {
-		err := c.attempt(ctx, host, check)
+		err := c.attempt(ctx, user, host, check)
 		if err == nil {
 			return nil
 		}
@@ -81,7 +82,10 @@ func (c Checker) poll(ctx context.Context, host string, check func(*ssh.Client) 
 	}
 }
 
-func (c Checker) attempt(ctx context.Context, host string, check func(*ssh.Client) error) error {
+func (c Checker) attempt(ctx context.Context, user, host string, check func(*ssh.Client) error) error {
+	if user == "" {
+		user = "root"
+	}
 	port := c.Port
 	if port == 0 {
 		port = 22
@@ -94,7 +98,7 @@ func (c Checker) attempt(ctx context.Context, host string, check func(*ssh.Clien
 	}
 	_ = conn.SetDeadline(time.Now().Add(attemptTimeout))
 	cfg := &ssh.ClientConfig{
-		User:            "root",
+		User:            user,
 		Auth:            c.Auth,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         10 * time.Second,

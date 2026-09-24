@@ -77,7 +77,7 @@ func TestVerifyNixOSMatches(t *testing.T) {
 		}
 		return "/nix/store/abc-nixos-system-web1\n", 0
 	})
-	err := checker(key, port).VerifyNixOS(withTimeout(t, 5*time.Second), "127.0.0.1", "/nix/store/abc-nixos-system-web1")
+	err := checker(key, port).VerifyNixOS(withTimeout(t, 5*time.Second), "", "127.0.0.1", "/nix/store/abc-nixos-system-web1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestVerifyNixOSRetriesWhileInstallerStillRunning(t *testing.T) {
 		}
 		return "/nix/store/abc-nixos-system-web1\n", 0
 	})
-	err := checker(key, port).VerifyNixOS(withTimeout(t, 5*time.Second), "127.0.0.1", "/nix/store/abc-nixos-system-web1")
+	err := checker(key, port).VerifyNixOS(withTimeout(t, 5*time.Second), "", "127.0.0.1", "/nix/store/abc-nixos-system-web1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestVerifyNixOSTimesOutOnMismatch(t *testing.T) {
 	port := startServer(t, "127.0.0.1:0", key.PublicKey(), func(string) (string, uint32) {
 		return "/nix/store/wrong\n", 0
 	})
-	err := checker(key, port).VerifyNixOS(withTimeout(t, 300*time.Millisecond), "127.0.0.1", "/nix/store/right")
+	err := checker(key, port).VerifyNixOS(withTimeout(t, 300*time.Millisecond), "", "127.0.0.1", "/nix/store/right")
 	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), `"/nix/store/wrong"`) {
 		t.Fatalf("err = %v", err)
 	}
@@ -115,7 +115,7 @@ func TestVerifyNixOSTimesOutOnMismatch(t *testing.T) {
 func TestVerifyNixOSFailsWhenNotNixOS(t *testing.T) {
 	key := newSigner(t)
 	port := startServer(t, "127.0.0.1:0", key.PublicKey(), func(string) (string, uint32) { return "", 1 })
-	err := checker(key, port).VerifyNixOS(withTimeout(t, 300*time.Millisecond), "127.0.0.1", "/nix/store/right")
+	err := checker(key, port).VerifyNixOS(withTimeout(t, 300*time.Millisecond), "", "127.0.0.1", "/nix/store/right")
 	if err == nil {
 		t.Fatal("want error")
 	}
@@ -154,4 +154,17 @@ func generateKeyPEM(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return pem.EncodeToMemory(block)
+}
+
+func TestVerifyNixOSLogsInAsUser(t *testing.T) {
+	key := newSigner(t)
+	port := startServerAs(t, "127.0.0.1:0", "mp", key.PublicKey(), func(string) (string, uint32) {
+		return "/nix/store/abc\n", 0
+	})
+	if err := checker(key, port).VerifyNixOS(withTimeout(t, 5*time.Second), "mp", "127.0.0.1", "/nix/store/abc"); err != nil {
+		t.Fatal(err)
+	}
+	if err := checker(key, port).VerifyNixOS(withTimeout(t, 300*time.Millisecond), "", "127.0.0.1", "/nix/store/abc"); err == nil {
+		t.Fatal("root login accepted by a server that only allows mp")
+	}
 }

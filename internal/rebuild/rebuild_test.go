@@ -2,6 +2,7 @@ package rebuild
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -71,8 +72,8 @@ func (f *fakes) MakeBootDefault(_ context.Context, r nixos.Remote, out string, _
 	return f.record("bootdefault %s on %s", out, r.Host)
 }
 
-func (f *fakes) VerifyNixOS(_ context.Context, host, want string) error {
-	return f.record("verify %s %s", host, want)
+func (f *fakes) VerifyNixOS(_ context.Context, user, host, want string) error {
+	return f.record("verify %s %s as %s", host, want, cmp.Or(user, "root"))
 }
 
 func setup(t *testing.T) (Options, Deps, *fakes, *bytes.Buffer) {
@@ -107,7 +108,7 @@ func TestRunRebuildsInOrder(t *testing.T) {
 		"build .#web1 on 203.0.113.10",
 		"activate " + storePath + " on 203.0.113.10",
 		"bootdefault " + storePath + " on 203.0.113.10",
-		"verify 203.0.113.10 " + storePath,
+		"verify 203.0.113.10 " + storePath + " as root",
 		"labels 42",
 	}
 	if !slices.Equal(f.calls, want) {

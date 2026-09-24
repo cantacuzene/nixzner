@@ -31,7 +31,7 @@ type Nix interface {
 
 type SSH interface {
 	WaitForSSH(ctx context.Context, host string) error
-	VerifyNixOS(ctx context.Context, host, wantOutPath string) error
+	VerifyNixOS(ctx context.Context, user, host, wantOutPath string) error
 }
 
 type Deps struct {
@@ -114,7 +114,7 @@ func Run(ctx context.Context, opts config.CreateOptions, d Deps) (Result, error)
 		{Name: "verify", Run: func(ctx context.Context) (pipeline.Cleanup, error) {
 			ctx, cancel := context.WithTimeout(ctx, d.VerifyWait)
 			defer cancel()
-			return nil, d.SSH.VerifyNixOS(ctx, res.Server.IPv4, outPath)
+			return nil, d.SSH.VerifyNixOS(ctx, "", res.Server.IPv4, outPath)
 		}},
 		{Name: "finalize", Run: func(ctx context.Context) (pipeline.Cleanup, error) {
 			labels := config.SystemLabels(opts.Labels, opts.Flake, config.StatusReady)
