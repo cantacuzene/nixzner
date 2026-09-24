@@ -9,8 +9,8 @@ server boots into exactly the system your flake describes. If anything
 fails — or you press Ctrl-C — the server is deleted and the full log is kept
 in `./nixzner-logs/`.
 
-nixzner stops at a verified first boot. Deploy later changes with
-`nixos-rebuild --target-host`, deploy-rs, or colmena.
+To change a server later, edit its flake and run `nixzner rebuild` (below),
+or use `nixos-rebuild --target-host`, deploy-rs, or colmena.
 
 ## Requirements
 
@@ -64,6 +64,25 @@ Progress goes to stderr.
 
 Servers get the labels `managed-by=nixzner`, `nixzner-flake=<flake>`, and
 `nixzner-status=installing|ready`.
+
+## Changing a server: `nixzner rebuild`
+
+```sh
+nixzner rebuild web1 --flake .#web1
+```
+
+Looks up `web1` (only servers labelled `managed-by=nixzner`), builds the
+flake's system **on the server** (your machine does not need to build Linux),
+activates it, and only if activation succeeds makes it the boot default; then
+checks the server runs exactly that system. Nothing is ever deleted: if the
+build fails nothing changed; if activation fails the previous system is still
+the boot default and the error prints the command to switch back. On a
+terminal `--flake` is asked for when missing (default `.#<name>`).
+
+Unlike `create`, rebuild checks the server's SSH host key: it is trusted the
+first time and a changed key is refused. Some settings, like
+`networking.hostName`, only fully apply after a reboot, as with
+`nixos-rebuild switch`.
 
 ## Security note
 

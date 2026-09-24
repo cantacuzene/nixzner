@@ -263,6 +263,18 @@ func toServer(s *hcloud.Server) Server {
 	return out
 }
 
+// FindServer looks up an existing server by name and returns its labels.
+func (c *Client) FindServer(ctx context.Context, name string) (Server, map[string]string, error) {
+	s, _, err := c.hc.Server.GetByName(ctx, name)
+	if err != nil {
+		return Server{}, nil, fmt.Errorf("looking up server %q: %w", name, err)
+	}
+	if s == nil {
+		return Server{}, nil, fmt.Errorf("server %q not found", name)
+	}
+	return toServer(s), s.Labels, nil
+}
+
 // DeleteServer deletes the server and waits for it to be gone. A server
 // that no longer exists counts as deleted.
 func (c *Client) DeleteServer(ctx context.Context, id int64) error {

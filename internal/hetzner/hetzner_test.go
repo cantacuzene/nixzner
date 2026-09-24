@@ -28,6 +28,7 @@ type fakeAPI struct {
 	firewalls       map[string]bool
 	networks        map[string]bool
 	existingServers map[string]bool
+	serverLabels    map[string]map[string]string // server name -> labels
 	actionStatus    string
 	createBody      map[string]any
 	updateBody      map[string]any
@@ -148,7 +149,11 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 	case get && r.URL.Path == "/servers":
 		var items []any
 		if f.existingServers[name] {
-			items = []any{serverJSON(99, name)}
+			srv := serverJSON(99, name)
+			if l := f.serverLabels[name]; l != nil {
+				srv["labels"] = l
+			}
+			items = []any{srv}
 		}
 		writeJSON(w, 200, map[string]any{"servers": items})
 	case r.Method == http.MethodPost && r.URL.Path == "/servers":
@@ -382,5 +387,29 @@ func TestSSHKeyNames(t *testing.T) {
 	}
 	if want := []string{"admin", "zed"}; !slices.Equal(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestFindServer(t *testing.T) {
+	c, f := newFakeAPI(t)
+	f.existingServers["web1"] = true
+	f.serverLabels = map[string]map[string]string{"web1": {"managed-by": "nixzner"}}
+	got, labels, err := c.FindServer(context.Background(), "web1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (Server{ID: 99, Name: "web1", IPv4: "203.0.113.10", IPv6: "2001:db8:1:2::1"}); got != want {
+		t.Errorf("server = %+v, want %+v", got, want)
+	}
+	if labels["managed-by"] != "nixzner" {
+		t.Errorf("labels = %v", labels)
+	}
+}
+
+func TestFindServerNotFound(t *testing.T) {
+	c, _ := newFakeAPI(t)
+	_, _, err := c.FindServer(context.Background(), "nope")
+	if err == nil || !strings.Contains(err.Error(), `server "nope" not found`) {
+		t.Fatalf("err = %v", err)
 	}
 }

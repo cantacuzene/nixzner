@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -94,6 +95,41 @@ func TestCreateRejectsMissingFlakeDirectory(t *testing.T) {
 	args := append(append([]string{}, fullArgs...), "--flake", "path:/nonexistent/nixzner-flake#web1")
 	code, _, stderr := runCLI(map[string]string{"HCLOUD_TOKEN": "x"}, args...)
 	if code != 1 || !strings.Contains(stderr, `flake path "/nonexistent/nixzner-flake"`) {
+		t.Fatalf("code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestRebuildRequiresName(t *testing.T) {
+	code, _, stderr := runCLI(nil, "rebuild")
+	if code != 1 || !strings.Contains(stderr, "accepts 1 arg") {
+		t.Fatalf("code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestRebuildWithoutTerminalRequiresFlake(t *testing.T) {
+	code, _, stderr := runCLI(nil, "rebuild", "web1")
+	if code != 1 || !strings.Contains(stderr, `required flag(s) "flake" not set`) {
+		t.Fatalf("code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestRebuildRequiresToken(t *testing.T) {
+	code, _, stderr := runCLI(nil, "rebuild", "web1", "--flake", ".#web1")
+	if code != 1 || !strings.Contains(stderr, "HCLOUD_TOKEN is not set") {
+		t.Fatalf("code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestRebuildInteractivePromptsForFlake(t *testing.T) {
+	p := newFakePrompter(nil)
+	code, _, stderr := runCLIWith(p, nil, "rebuild", "web1")
+	if want := []string{"Flake"}; !slices.Equal(p.asked, want) {
+		t.Errorf("asked %v, want %v", p.asked, want)
+	}
+	if p.initial["Flake"] != ".#web1" {
+		t.Errorf("flake prompt initial = %q, want .#web1", p.initial["Flake"])
+	}
+	if code != 1 || !strings.Contains(stderr, "HCLOUD_TOKEN is not set") {
 		t.Fatalf("code=%d stderr=%q", code, stderr)
 	}
 }

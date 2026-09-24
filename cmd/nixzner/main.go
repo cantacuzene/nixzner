@@ -22,6 +22,7 @@ import (
 	"nixzner/internal/create"
 	"nixzner/internal/hetzner"
 	"nixzner/internal/nixos"
+	"nixzner/internal/rebuild"
 	"nixzner/internal/sshcheck"
 )
 
@@ -68,6 +69,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 		SilenceUsage: true,
 	}
 	root.AddCommand(newCreateCmd(stdout, stderr, getenv, created, p))
+	root.AddCommand(newRebuildCmd(stdout, stderr, getenv, p))
 	root.SetArgs(args)
 	root.SetOut(stdout)
 	root.SetErr(stderr)
@@ -136,7 +138,7 @@ func newCreateCmd(stdout, stderr io.Writer, getenv func(string) string, created 
 				Hetzner:         hetzner.New(token),
 				Nix:             nixos.Nix{Runner: nixos.ExecRunner{}},
 				SSH:             sshcheck.Checker{Auth: auth, Backoff: sshcheck.DefaultBackoff, Progress: progress},
-				CheckTools:      func() error { return nixos.CheckTools(exec.LookPath) },
+				CheckTools:      func() error { return nixos.CheckTools(exec.LookPath, "nix", "nixos-anywhere") },
 				Stderr:          stderr,
 				Now:             time.Now,
 				SSHWait:         5 * time.Minute,
@@ -163,6 +165,73 @@ func newCreateCmd(stdout, stderr io.Writer, getenv func(string) string, created 
 	f.StringArrayVar(&opts.Networks, "network", nil, "existing network to attach (repeatable)")
 	f.StringArrayVar(&labels, "label", nil, "extra server label key=value (repeatable)")
 	f.StringVar(&opts.LogDir, "log-dir", "./nixzner-logs", "directory for logs of failed installs")
+	f.DurationVar(&opts.Timeout, "timeout", 30*time.Minute, "overall deadline")
+	return cmd
+}
+
+func newRebuildCmd(stdout, stderr io.Writer, getenv func(string) string, p prompter) *cobra.Command {
+	var (
+		opts  rebuild.Options
+		flake string
+	)
+	cmd := &cobra.Command{
+		Use:   "rebuild <name>",
+		Short: "Build a flake's system on an existing nixzner server and switch to it",
+		Long: "Build a flake's system on an existing nixzner server and switch to it.\n\n" +
+			"The system is built on the server, activated, then made the boot default only if activation succeeds.\n" +
+			"On a terminal, --flake is asked for when missing.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			opts.Name = args[0]
+			if flake == "" {
+				if p == nil {
+					return errors.New(`required flag(s) "flake" not set`)
+				}
+				validate := func(s string) error { _, err := config.ParseFlake(s); return err }
+				var err error
+				if flake, err = p.Input("Flake", ".#"+opts.Name, validate); err != nil {
+					return err
+				}
+			}
+			var err error
+			if opts.Flake, err = config.ParseFlake(flake); err != nil {
+				return err
+			}
+			if opts.Flake, err = config.ResolveLocalFlake(opts.Flake); err != nil {
+				return err
+			}
+			token := getenv("HCLOUD_TOKEN")
+			if token == "" {
+				return errors.New("HCLOUD_TOKEN is not set")
+			}
+			auth, closeAuth, err := sshcheck.AuthMethods(opts.Identity, getenv("SSH_AUTH_SOCK"))
+			if err != nil {
+				return err
+			}
+			defer closeAuth()
+
+			progress := func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) }
+			deps := rebuild.Deps{
+				Hetzner:    hetzner.New(token),
+				Nix:        nixos.Nix{Runner: nixos.ExecRunner{}},
+				SSH:        sshcheck.Checker{Auth: auth, Backoff: sshcheck.DefaultBackoff, Progress: progress},
+				CheckTools: func() error { return nixos.CheckTools(exec.LookPath, "nix", "ssh") },
+				Stderr:     stderr,
+				Now:        time.Now,
+				VerifyWait: 2 * time.Minute,
+			}
+			res, err := rebuild.Run(cmd.Context(), opts, deps)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(stdout, "%s %s %s %s\n", res.Server.Name, res.Server.IPv4, res.Server.IPv6, res.StorePath)
+			return nil
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&flake, "flake", "", "flake to build, as <uri>#<host> (e.g. .#web1)")
+	f.StringVar(&opts.Identity, "identity", "", "private key file for root on the server (default: use ssh-agent)")
+	f.StringVar(&opts.LogDir, "log-dir", "./nixzner-logs", "directory for logs of failed rebuilds")
 	f.DurationVar(&opts.Timeout, "timeout", 30*time.Minute, "overall deadline")
 	return cmd
 }

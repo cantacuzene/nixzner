@@ -21,7 +21,7 @@ v1 ships a single command: `create`.
 | Interface | Imperative CLI |
 | Commands (v1) | `create` only |
 | Resource scope | Servers only; existing firewalls/networks attached by name |
-| Post-install | Out of scope; nixzner ends at verified first boot (day-2 via deploy-rs/colmena/nixos-rebuild) |
+| Post-install | `create` ends at verified first boot; `nixzner rebuild` (below) applies later flake changes (or use deploy-rs/colmena/nixos-rebuild) |
 | Failure policy | Delete the server on any failure or interrupt, after saving logs locally |
 | SSH keys | Existing Hetzner-registered key via `--ssh-key`; local auth via ssh-agent or `--identity` |
 | Build location | Always `--build-on remote` (works from macOS and CI, x86 and ARM alike) |
@@ -158,8 +158,20 @@ Integration test (`//go:build integration`, manual, never in CI):
 - README: prerequisites (Nix with flakes, a nixos-anywhere release supporting `--build-on`, `HCLOUD_TOKEN`), usage, the
   requirement that the flake authorize the same SSH key, and the TOFU host-key note.
 
+## `rebuild` (added 2026-09-24)
+
+`nixzner rebuild <name> --flake <uri>#<host>` updates an existing server labelled
+`managed-by=nixzner`: preflight (`nix` and `ssh` on PATH, find server, `nix eval`
+outPath) → build on the server (`nix build --eval-store auto --store
+ssh-ng://root@<ip>`; the result must equal the evaluated outPath) → activate
+(`switch-to-configuration test`) → make boot default (`nix-env -p
+/nix/var/nix/profiles/system --set` + `switch-to-configuration boot`) → verify
+`/run/current-system` → set `nixzner-flake`. It never deletes the server; on failure
+it states what changed and, after a failed activation, how to switch back. SSH uses
+the system `ssh` with `StrictHostKeyChecking=accept-new`.
+
 ## Out of scope (v1)
 
 `reinstall`, `destroy`, `list`, `status`/`console`; creating or owning firewalls,
-networks, volumes, IPs; declarative config; day-2 deployment; JSON output; local builds;
+networks, volumes, IPs; declarative config; day-2 deployment beyond `rebuild`; JSON output; local builds;
 nixos-infect.

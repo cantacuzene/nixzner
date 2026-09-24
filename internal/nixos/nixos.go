@@ -83,10 +83,66 @@ func (n Nix) Install(ctx context.Context, a InstallArgs, log io.Writer) error {
 	return nil
 }
 
-// CheckTools verifies that nix and nixos-anywhere are installed.
-func CheckTools(lookPath func(string) (string, error)) error {
+// Remote is a running NixOS server reached as root over the system's ssh,
+// so ~/.ssh/config and ~/.ssh/known_hosts apply.
+type Remote struct {
+	Host     string // IPv4 address
+	Identity string // optional private key file
+}
+
+// sshOptions trusts a host key on first contact and refuses a changed one:
+// unlike during install, a running server's host key should be stable.
+func (r Remote) sshOptions() []string {
+	opts := []string{"-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new"}
+	if r.Identity != "" {
+		opts = append(opts, "-i", r.Identity)
+	}
+	return opts
+}
+
+// BuildRemote builds the host's system closure on the server itself (the
+// local machine may not be able to build Linux derivations) and returns its
+// store path. Build output goes to log.
+func (n Nix) BuildRemote(ctx context.Context, f config.FlakeRef, r Remote, log io.Writer) (string, error) {
+	args := append([]string{"NIX_SSHOPTS=" + strings.Join(r.sshOptions(), " "), "nix"}, nixFlags...)
+	args = append(args, "build", "--print-out-paths", "--no-link",
+		"--eval-store", "auto", "--store", "ssh-ng://root@"+r.Host+"?compress=true",
+		f.ToplevelAttr())
+	var out bytes.Buffer
+	if err := n.Runner.Run(ctx, "env", args, &out, log); err != nil {
+		return "", fmt.Errorf("nix build on %s: %w", r.Host, err)
+	}
+	path := strings.TrimSpace(out.String())
+	if !strings.HasPrefix(path, "/nix/store/") {
+		return "", fmt.Errorf("nix build on %s: unexpected output %q", r.Host, path)
+	}
+	return path, nil
+}
+
+// Activate switches the running system to outPath without touching the
+// bootloader, so a reboot still returns to the previous generation.
+func (n Nix) Activate(ctx context.Context, r Remote, outPath string, log io.Writer) error {
+	return n.ssh(ctx, r, outPath+"/bin/switch-to-configuration test", log)
+}
+
+// MakeBootDefault records outPath as the newest system generation and
+// installs it as the bootloader default.
+func (n Nix) MakeBootDefault(ctx context.Context, r Remote, outPath string, log io.Writer) error {
+	return n.ssh(ctx, r, "nix-env -p /nix/var/nix/profiles/system --set "+outPath+" && "+outPath+"/bin/switch-to-configuration boot", log)
+}
+
+func (n Nix) ssh(ctx context.Context, r Remote, command string, log io.Writer) error {
+	args := append(r.sshOptions(), "root@"+r.Host, "--", command)
+	if err := n.Runner.Run(ctx, "ssh", args, log, log); err != nil {
+		return fmt.Errorf("ssh root@%s %q: %w", r.Host, command, err)
+	}
+	return nil
+}
+
+// CheckTools verifies that each tool is on PATH.
+func CheckTools(lookPath func(string) (string, error), tools ...string) error {
 	var errs []error
-	for _, tool := range []string{"nix", "nixos-anywhere"} {
+	for _, tool := range tools {
 		if _, err := lookPath(tool); err != nil {
 			errs = append(errs, fmt.Errorf("%s not found on PATH", tool))
 		}

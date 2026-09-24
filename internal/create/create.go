@@ -8,14 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"time"
 
 	"nixzner/internal/config"
 	"nixzner/internal/hetzner"
 	"nixzner/internal/nixos"
 	"nixzner/internal/pipeline"
+	"nixzner/internal/runlog"
 )
 
 type Hetzner interface {
@@ -63,7 +62,7 @@ func Run(ctx context.Context, opts config.CreateOptions, d Deps) (Result, error)
 	if err := opts.Validate(); err != nil {
 		return Result{}, err
 	}
-	logFile, err := os.CreateTemp(d.TempDir, "nixzner-*.log")
+	logFile, err := runlog.Start(d.TempDir)
 	if err != nil {
 		return Result{}, err
 	}
@@ -128,14 +127,13 @@ func Run(ctx context.Context, opts config.CreateOptions, d Deps) (Result, error)
 	defer cancel()
 	runErr := p.Run(runCtx, steps)
 	if runErr == nil {
-		logFile.Close()
-		os.Remove(logFile.Name())
+		logFile.Discard()
 		res.StorePath = outPath
 		return res, nil
 	}
 
 	progress("error: %v", runErr)
-	if logPath, err := persistLog(logFile, opts.LogDir, opts.Name, d.Now()); err != nil {
+	if logPath, err := logFile.Persist(opts.LogDir, opts.Name, d.Now()); err != nil {
 		fmt.Fprintf(d.Stderr, "warning: could not save log: %v (temporary log: %s)\n", err, logFile.Name())
 	} else {
 		fmt.Fprintf(d.Stderr, "log saved to %s\n", logPath)
@@ -151,24 +149,4 @@ func Run(ctx context.Context, opts config.CreateOptions, d Deps) (Result, error)
 		return res, fmt.Errorf("%w: %w (while handling: %w)", ErrCleanupFailed, err, runErr)
 	}
 	return res, runErr
-}
-
-// persistLog closes the temporary log and moves it to dir.
-func persistLog(f *os.File, dir, name string, now time.Time) (string, error) {
-	if err := f.Close(); err != nil {
-		return "", err
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-	data, err := os.ReadFile(f.Name())
-	if err != nil {
-		return "", err
-	}
-	dst := filepath.Join(dir, fmt.Sprintf("%s-%s.log", name, now.UTC().Format("20060102T150405Z")))
-	if err := os.WriteFile(dst, data, 0o600); err != nil {
-		return "", err
-	}
-	os.Remove(f.Name())
-	return dst, nil
 }
