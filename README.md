@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.svg" alt="nixzner logo: half a red H, half a snowflake of lambdas" width="160">
+</p>
+
 # nixzner
 
 Create a Hetzner Cloud server and install NixOS on it from your flake, in one command.
